@@ -1,4 +1,3 @@
-
 A Lua-based IRC library and a rewrite of TuxBot based on it.
 
 `irc.lua`: The IRC library.
@@ -8,13 +7,13 @@ A Lua-based IRC library and a rewrite of TuxBot based on it.
 
 The library only depends on LuaSocket (and optionally LuaSec of you want SSL). The `responses.lua` bot plugin also depends on LPeg.
 
-== `bot.lua` Usage ==
+## `bot.lua` Usage ##
 
 `lua bot.lua <config file> <plugins dir>`
 
 The config file defaults to `config.lua`, the plugin dir defaults to `plugins`.
 
-=== Configuration ===
+### Configuration ###
 
 The configuration file is a Lua script that should return a table with these fields:
 
@@ -42,7 +41,7 @@ The configuration file is a Lua script that should return a table with these fie
   * `[2]` (optional) The value to pass to the plugin as its configuration.
 
 
-=== The Plugin API ===
+### The Plugin API ###
 
 Each plugin has its own env table, with these fields:
 
