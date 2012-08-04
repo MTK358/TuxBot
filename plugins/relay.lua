@@ -1,4 +1,6 @@
 
+local issendingrealy = false
+
 local function nickhash(nick)
     local num = 0
     for i = 1, #nick do num = num + nick:byte(i, i) end
@@ -24,6 +26,8 @@ local function relay(text, info, how)
     for _, chan in ipairs(info.group) do
         if chan ~= info.origin then
             relaymessages[('%s %s %s'):format(tostring(bot.clientsbyname[chan[1]]), chan[2], text)] = true
+            print('relay', ('%s %s %s'):format(tostring(bot.clientsbyname[chan[1]]), chan[2], text))
+            issendingrelay = true
             if not how then
                 bot.clientsbyname[chan[1]]:sendprivmsg(chan[2], text)
             elseif how == 'notice' then
@@ -31,6 +35,7 @@ local function relay(text, info, how)
             elseif how == 'me' then
                 bot.clientsbyname[chan[1]]:sendctcp(chan[2], 'ACTION', text)
             end
+            issendingrelay = false
         end
     end
 end
@@ -172,7 +177,9 @@ local function msg_handler(_, msg)
 end
 
 local function sent_handler(isnotice, client, to, senttext, time)
+    if issendingrelay then return end
     local idstr = ('%s %s %s'):format(tostring(client), to, senttext)
+    print('sent', idstr)
     if relaymessages[idstr] then
         relaymessages[idstr] = nil
         return
@@ -194,11 +201,13 @@ local function sent_handler(isnotice, client, to, senttext, time)
             for _, chan in ipairs(relaygroup) do
                 if chan ~= match then
                     relaymessages[('%s %s %s'):format(tostring(client), chan[2], text)] = true
+                    issendingrelay = true
                     if isnotice then
                         bot.clientsbyname[chan[1]]:sendnotice(chan[2], text)
                     else
                         bot.clientsbyname[chan[1]]:sendprivmsg(chan[2], text)
                     end
+                    issendingrelay = false
                 end
             end
         end
