@@ -7,8 +7,6 @@ local function nickhash(nick)
     return num
 end
 
-local relaymessages = {}
-
 local function isrelayed(msg, originchan)
     originchan = originchan or msg.args[1]
     local netname = bot.clients[msg.client].name
@@ -25,8 +23,6 @@ end
 local function relay(text, info, how)
     for _, chan in ipairs(info.group) do
         if chan ~= info.origin then
-            relaymessages[('%s %s %s'):format(tostring(bot.clientsbyname[chan[1]]), chan[2], text)] = true
-            print('relay', ('%s %s %s'):format(tostring(bot.clientsbyname[chan[1]]), chan[2], text))
             issendingrelay = true
             if not how then
                 bot.clientsbyname[chan[1]]:sendprivmsg(chan[2], text)
@@ -178,12 +174,6 @@ end
 
 local function sent_handler(isnotice, client, to, senttext, time)
     if issendingrelay then return end
-    local idstr = ('%s %s %s'):format(tostring(client), to, senttext)
-    print('sent', idstr)
-    if relaymessages[idstr] then
-        relaymessages[idstr] = nil
-        return
-    end
     for _, relaygroup in ipairs(config) do
         local match = nil
         for _, chan in ipairs(relaygroup) do
@@ -200,7 +190,6 @@ local function sent_handler(isnotice, client, to, senttext, time)
             text = text..(isnotice and '-' or '>')..config.nickfmts.endfmt..' '..senttext
             for _, chan in ipairs(relaygroup) do
                 if chan ~= match then
-                    relaymessages[('%s %s %s'):format(tostring(client), chan[2], text)] = true
                     issendingrelay = true
                     if isnotice then
                         bot.clientsbyname[chan[1]]:sendnotice(chan[2], text)
