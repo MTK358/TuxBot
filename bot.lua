@@ -156,6 +156,9 @@ local function add_client(net, ident)
         statechanged_cb = function (client, state, ...)
             send_event_to_plugins('statechanged', client, state, ...)
             nickattempt, nickattemptstate = nil, nil
+            for _, line in ipairs(net._autorun or {}) do
+                client:sendmessageline(line)
+            end
             if state == 'connected' then
                 for k, v in pairs(net._channels) do
                     client:sendmessage('JOIN', type(k)=='string' and k or v)
@@ -229,6 +232,7 @@ local function load_config()
             info._receivedcolor, info.receivedcolor = info.receivedcolor, nil
             info._commandprefixes, info.commandprefixes = info.commandprefixes, nil
             info._ignore, info.ignore = info.ignore, nil
+            info._autorun, info.autorun = info.autorun, nil
             add_client(info, assert(config.identities[info.identity], ('no identity "%s" (needed by network "%s")'):format(info.identity, name)))
         end
     end
