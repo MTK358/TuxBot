@@ -203,7 +203,7 @@ end
 -- lowercase version of the key during lookup.
 local name_key_metatable = {
     __index = function (tbl, key)
-        rawget(tbl, type(key)=='string' and lower(key) or key)
+        return rawget(tbl, type(key)=='string' and lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and lower(key) or key, val)
@@ -392,6 +392,7 @@ end
 -- If in the reconnecting state, connect now.
 function Client:connect()
     assert(self.state == 'disconnected' or self.state == 'reconnecting')
+    self._intentionally_quit = false
     if self._timer then self._timer:cancel() end
     self._conn = socket.tcp()
     self._conn:settimeout(0)
@@ -464,7 +465,7 @@ function Client:_do_ssl_handshake()
     elseif errmsg == 'closed' then
         self:_reconnect('closed')
     else
-        error('unknown LuaSec dohandshake error message: '..errmsg)
+        self:_reconnect('sslerror '..errmsg)
     end
 end
 
@@ -525,6 +526,10 @@ function Client:_on_readable()
                         end
                         self.state = 'connected'
                         self:_trigger_event_handlers('statechanged', self.state)
+                        if msg.sender.host then
+                            self.connstate.serveraddress = msg.sender.host
+                            self:_trigger_event_handlers('connstatechanged', 'serveraddress', msg.sender.host)
+                        end
                         self:ping()
                     elseif msg.cmd == 'PONG' and #msg.args >= 2 and tostring(self._pingtime) == msg.args[2] and self.state == 'connected' then
                         local lag = socket.gettime() - self._pingtime
@@ -546,6 +551,8 @@ function Client:_on_readable()
                             self:_trigger_event_handlers('nickchanged', msg.args[1], self._nick)
                             self._nick = msg.args[1]
                         end
+                    elseif msg.cmd == 'QUIT' and msg.sender.nick and nameeq(msg.sender.nick, self._nick) then
+                        self._intentionally_quit = true
                     elseif msg.cmd == ':CTCP' then
                         if msg.args[2] == 'FINGER' then
                             self:sendctcpreply(msg.sender.nick, 'FINGER', ':FINGER is not supported, try USERINFO instead')
@@ -594,7 +601,14 @@ function Client:_on_readable()
             end
         end
         if err == 'closed' then
-            self:_reconnect('closed')
+            if self._intentionally_quit then
+                self.state = 'disconnected'
+                self:_trigger_event_handlers('statechanged', self.state)
+                self._eventloop:remove_readable_handler(self._conn, self._rhandler)
+                self._eventloop:remove_writable_handler(self._conn, self._whandler)
+            else
+                self:_reconnect('closed')
+            end
         end
     end
     return true
@@ -760,11 +774,10 @@ ChannelTracker._msghandlers = {
         if nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = {
                 name = msg.args[1],
-                members = {
-                    [self._client:get_nick()] = {hostmask={nick=self._client:get_nick()}, mode='+'},
-                },
+                members = {},
             }
             setmetatable(chan.members, name_key_metatable)
+            chan.members[self._client:get_nick()] = {sender={nick=self._client:get_nick()}, mode='+'}
             self.chanstates[msg.args[1]] = chan
             self:_trigger_event_handlers('joinedchannel', msg.args[1], chan)
             if self.netinfo.send_names_on_join or self.defaults.send_names_on_join then self._client:sendmessage('NAMES', msg.args[1]) end
@@ -898,7 +911,7 @@ ChannelTracker._msghandlers = {
                     nick = member
                 end
                 if (not chan.members[nick]) and isnick(nick) then
-                    chan.members[nick] = {mode = mode, hostmask = nil}
+                    chan.members[nick] = {mode = mode, sender = {nick=nick}}
                     self:_trigger_event_handlers('memberadded', msg.args[3], nick, 'NAMES')
                     self._unknownprefixes[nick] = true
                 end

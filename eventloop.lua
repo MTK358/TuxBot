@@ -26,7 +26,7 @@ local timer_mt = {
 }
 timer_mt.__index = timer_mt
 
-function EventLoop:timer(timeout, cb, arg)
+function EventLoop:timer(timeout, cb)
     local tbl = {
         _time = socket.gettime() + timeout,
         _running = true,
@@ -36,29 +36,29 @@ function EventLoop:timer(timeout, cb, arg)
     return tbl
 end
 
-function EventLoop:add_readable_handler(sock, coro)
-    self._readable_handlers[{sock}] = coro
+function EventLoop:add_readable_handler(sock, callback)
+    self._readable_handlers[{sock}] = callback
 end
 
-function EventLoop:add_writable_handler(sock, coro)
-    self._writable_handlers[{sock}] = coro
+function EventLoop:add_writable_handler(sock, callback)
+    self._writable_handlers[{sock}] = callback
 end
 
-function EventLoop:remove_readable_handler(sock, coro)
+function EventLoop:remove_readable_handler(sock, callback)
     for k, v in pairs(self._readable_handlers) do
-        if k[1] == sock and v == coro then self._readable_handlers[k] = nil end
+        if k[1] == sock and v == callback then self._readable_handlers[k] = nil end
     end
 end
 
-function EventLoop:remove_writable_handler(sock, coro)
+function EventLoop:remove_writable_handler(sock, callback)
     for k, v in pairs(self._writable_handlers) do
-        if k[1] == sock and v == coro then self._writable_handlers[k] = nil end
+        if k[1] == sock and v == callback then self._writable_handlers[k] = nil end
     end
 end
 
-function EventLoop:remove_socket_handlers(sock, coro)
-    self:remove_readable_handler(sock, coro)
-    self:remove_writable_handler(sock, coro)
+function EventLoop:remove_socket_handlers(sock, callback)
+    self:remove_readable_handler(sock, callback)
+    self:remove_writable_handler(sock, callback)
 end
 
 function EventLoop:step()
