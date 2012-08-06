@@ -81,6 +81,7 @@ function EventLoop:step()
                 local success, errmsg = pcall(v)
                 if not success then
                     io.stderr:write(('error in socket readable event handler: %s\n'):format(tostring(errmsg)))
+                    self._writable_handlers[k] = nil
                 else
                     if not errmsg then self._readable_handlers[k] = nil end
                 end

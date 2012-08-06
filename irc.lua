@@ -226,7 +226,7 @@ local default_defaults = {
     reconnection_interval_scale = 1.2,   -- multiply the interval by this amount after every autoreconnect attempt
     max_reconnection_interval = 30 * 60, -- the max amount of time to wait between autoreconnect attempts
 
-    -- rejoin not implemented
+    -- used by AutoJoiner
     initial_rejoin_interval = 3,         -- the initial amount of time to wait between autorejoin attempts (nil for no autorejoin)
                                          -- note that when kicked, Client first waits for the interval instead of JOINing immediately
     rejoin_interval_scale = 1.5,         -- multiply the interval by this amount after every autorejoin attempt
@@ -267,6 +267,7 @@ function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)
     self._nick = self.identinfo.nick or self.identinfo.nicks[1]
     self.defaults = defaults or default_defaults
     self._eventloop = eventloop
+    self.eventloop = eventloop
     self._eventhandlers = {
         ['statechanged'] = {},
         ['nickchanged'] = {},
@@ -367,6 +368,9 @@ end
 -- the args.
 function Client:add_event_handler(event, cb)
     self._eventhandlers[event][cb] = true
+end
+function Client:remove_event_handler(event, cb)
+    self._eventhandlers[event][cb] = nil
 end
 
 -- (private) clean up the current connection and reconnect after an interval
@@ -524,6 +528,9 @@ function Client:_on_readable()
                             self:_trigger_event_handlers('nickchanged', msg.args[1], self._nick)
                             self._nick = msg.args[1]
                         end
+                        for _, line in ipairs(self.netinfo.autorun or {}) do
+                            self:sendmessageline(line)
+                        end
                         self.state = 'connected'
                         self:_trigger_event_handlers('statechanged', self.state)
                         if msg.sender.host then
@@ -652,11 +659,6 @@ function Client:_send(str)
     end
 end
 
--- Remove an event handler.
-function Client:remove_event_handler(event, cb)
-    self._eventhandlers[event][cb] = nil
-end
-
 -- (private) trigger an event handler
 function Client:_trigger_event_handlers(event, ...)
     for cb in pairs(self._eventhandlers[event]) do
@@ -775,6 +777,7 @@ ChannelTracker._msghandlers = {
             local chan = {
                 name = msg.args[1],
                 members = {},
+                mode = '+',
             }
             setmetatable(chan.members, name_key_metatable)
             chan.members[self._client:get_nick()] = {sender={nick=self._client:get_nick()}, mode='+'}
@@ -801,7 +804,7 @@ ChannelTracker._msghandlers = {
             if chan then
                 for k, v in pairs(chan.members) do
                     chan.members[k] = nil
-                    self._remove_from_unknownprefixes(k)
+                    self:_remove_from_unknownprefixes(k)
                 end
                 self.chanstates[msg.args[1]] = nil
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.sender.nick, '*PART')
@@ -811,7 +814,7 @@ ChannelTracker._msghandlers = {
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 chan.members[msg.sender.nick] = nil
-                self._remove_from_unknownprefixes(msg.sender.nick)
+                self:_remove_from_unknownprefixes(msg.sender.nick)
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.sender.nick, 'PART')
             end
         end
@@ -823,7 +826,7 @@ ChannelTracker._msghandlers = {
             if chan then
                 for k, v in pairs(chan.members) do
                     chan.members[k] = nil
-                    self._remove_from_unknownprefixes(k)
+                    self:_remove_from_unknownprefixes(k)
                 end
                 self.chanstates[msg.args[1]] = nil
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.args[2], '*KICK')
@@ -833,7 +836,7 @@ ChannelTracker._msghandlers = {
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 chan.members[msg.args[2]] = nil
-                self._remove_from_unknownprefixes(msg.args[2])
+                self:_remove_from_unknownprefixes(msg.args[2])
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.args[2], 'KICK')
             end
         end
@@ -936,6 +939,98 @@ ChannelTracker._msghandlers = {
     end,
 }
 
+local AutoJoiner = {}
+AutoJoiner.__index = AutoJoiner
+setmetatable(AutoJoiner, {__call = function (t, ...) return AutoJoiner.new(...) end})
+
+function AutoJoiner.new(client)
+    local self = {}
+    setmetatable(self, AutoJoiner)
+    self._client = client
+    self._netinfo = client.netinfo
+    self._defaults = client.defaults
+    self.rejoining_channels = {}
+    setmetatable(self.rejoining_channels, name_key_metatable)
+    self.on_channels = {}
+    setmetatable(self.on_channels, name_key_metatable)
+    for _, i in ipairs(self._netinfo.autojoin or {}) do self.rejoining_channels[i] = {} end
+
+    local function timer_cb(channel)
+        if self.rejoining_channels[channel] then
+            self._client:sendmessage('JOIN', channel)
+        end
+    end
+
+    self._on_statechanged = function (client, state)
+        if state == 'connected' then
+            for k, v in pairs(self.rejoining_channels) do
+                self._client:sendmessage('JOIN', k)
+            end
+            client:add_event_handler('receivedmessage_pre', self._on_message)
+        elseif state == 'disconnected' or state == 'reconnecting' then
+            for k, v in pairs(self.on_channels) do
+                self.rejoining_channels[k] = {}
+            end
+            client:remove_event_handler('receivedmessage_pre', self._on_message)
+        end
+    end
+
+    self._on_message = function (client, msg)
+        if msg.cmd == 'JOIN' and msg.sender.nick and nameeq(msg.sender.nick, client:get_nick()) then
+            self.on_channels[msg.args[1]] = true
+            if self.rejoining_channels[msg.args[1]] then
+                local timer = self.rejoining_channels[msg.args[1]]._timer
+                if timer then timer:cancel() end
+                self.rejoining_channels[msg.args[1]] = nil
+            end
+        elseif msg.cmd == 'PART' and msg.sender.nick and nameeq(msg.sender.nick, client:get_nick()) then
+            self.on_channels[msg.args[1]] = nil
+            local rejoininfo = self.rejoining_channels[msg.args[1]]
+            if rejoininfo and rejoininfo._timer then rejoininfo._timer:cancel() end
+            self.rejoining_channels[msg.args[1]] = nil
+        elseif msg.cmd == 'KICK' and #msg.args >= 2 and nameeq(msg.args[2], client:get_nick()) then
+            self.on_channels[msg.args[1]] = nil
+            local rejoininfo = self.rejoining_channels[msg.args[1]]
+            if rejoininfo and rejoininfo._timer then rejoininfo._timer:cancel() end
+            rejoininfo = {}
+            rejoininfo._interval = self._netinfo.initial_rejoin_interval or self._defaults.initial_rejoin_interval
+            rejoininfo._timer = self._client.eventloop:timer(rejoininfo._interval, function () timer_cb(msg.args[1]) end)
+            self.rejoining_channels[msg.args[1]] = rejoininfo
+        elseif (msg.cmd == '471' or
+                msg.cmd == '474' or
+                msg.cmd == '437') and #msg.args >= 2 and self.rejoining_channels[msg.args[2]] then
+            self.on_channels[msg.args[1]] = nil
+            local rejoininfo = self.rejoining_channels[msg.args[1]]
+            if rejoininfo._timer then rejoininfo._timer:cancel() end
+            if rejoininfo._interval then
+                rejoininfo._interval = rejoininfo._interval * self._netinfo.rejoin_interval_scale or self._defaults.rejoin_interval_scale
+                local max = self._netinfo.max_rejoin_interval or self._defaults.max_rejoin_interval
+                if rejoininfo._interval > max then rejoininfo._interval = max end
+            else
+                rejoininfo._interval = self._netinfo.initial_rejoin_interval or self._defaults.initial_rejoin_interval
+            end
+            rejoininfo._timer = self._client.eventloop:timer(rejoininfo._interval, function () timer_cb(msg.args[1]) end)
+            self.rejoining_channels[msg.args[1]] = rejoininfo
+        elseif (msg.cmd == '403' or
+                msg.cmd == '475' or
+                msg.cmd == '473' or
+                msg.cmd == '476') and #msg.args >= 2 and self.rejoining_channels[msg.args[2]] then
+            local rejoininfo = self.rejoining_channels[msg.args[1]]
+            if rejoininfo and rejoininfo._timer then rejoininfo._timer:cancel() end
+            self.rejoining_channels[msg.args[1]] = nil
+        end
+    end
+
+    client:add_event_handler('statechanged', self._on_statechanged)
+
+    return self
+end
+
+function AutoJoiner:addchannel(chan)
+    self.rejoining_channels[chan] = {}
+    self._client:sendmessage('JOIN', chan)
+end
+
 -- stuff available to users of this module
 return {
     enable_ssl = enable_ssl,
@@ -952,5 +1047,6 @@ return {
     name_key_metatable = name_key_metatable,
     Client = Client,
     ChannelTracker = ChannelTracker,
+    AutoJoiner = AutoJoiner,
 }
 

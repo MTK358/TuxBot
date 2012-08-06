@@ -96,6 +96,7 @@ local function add_client(net, ident)
         name = net.name,
         client=client,
         tracker=irc.ChannelTracker(client),
+        autojoiner=irc.AutoJoiner(client),
         sentcolor = net._sentcolor,
         receivedcolor = net._receivedcolor,
         tracker_receivedmessage_cb = function (tracker, msg)
@@ -156,14 +157,6 @@ local function add_client(net, ident)
         statechanged_cb = function (client, state, ...)
             send_event_to_plugins('statechanged', client, state, ...)
             nickattempt, nickattemptstate = nil, nil
-            if state == 'connected' then
-                for _, line in ipairs(net._autorun or {}) do
-                    client:sendmessageline(line)
-                end
-                for k, v in pairs(net._channels) do
-                    client:sendmessage('JOIN', type(k)=='string' and k or v)
-                end
-            end
             print(('* %s: %s%s'):format(clients[client].name, state, ((...) and ' ('..table.concat({...}, ' ')..')' or '')))
         end,
     }
@@ -232,7 +225,10 @@ local function load_config()
             info._receivedcolor, info.receivedcolor = info.receivedcolor, nil
             info._commandprefixes, info.commandprefixes = info.commandprefixes, nil
             info._ignore, info.ignore = info.ignore, nil
-            info._autorun, info.autorun = info.autorun, nil
+            info.autojoin = {}
+            for k, v in pairs(info._channels) do
+                info.autojoin[#info.autojoin+1] = type(k)=='string' and k or v
+            end
             add_client(info, assert(config.identities[info.identity], ('no identity "%s" (needed by network "%s")'):format(info.identity, name)))
         end
     end
@@ -341,11 +337,13 @@ local stdin_commands = {
 local luasocket_stdin_kludge = {getfd = function () return 0 end}
 local function stdin_handler()
     local line = io.stdin:read('*l')
-    for pattern, func in pairs(stdin_commands) do
-        local matches = {line:match(pattern)}
-        if matches[1] then
-            func(unpack(matches))
-            break
+    if line then
+        for pattern, func in pairs(stdin_commands) do
+            local matches = {line:match(pattern)}
+            if matches[1] then
+                func(unpack(matches))
+                break
+            end
         end
     end
     return true
