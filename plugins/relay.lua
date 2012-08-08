@@ -12,7 +12,7 @@ local function isrelayed(msg, originchan)
     local netname = bot.clients[msg.client].name
     for _, relaygroup in ipairs(config) do
         for _, chan in ipairs(relaygroup) do
-            if chan[1] == netname and irc.nameeq(chan[2], originchan) then
+            if chan[1] == netname and msg.client:nameeq(chan[2], originchan) then
                 return {group=relaygroup, origin=chan}
             end
         end
@@ -184,7 +184,7 @@ local function sent_handler(isnotice, client, to, senttext, time)
     for _, relaygroup in ipairs(config) do
         local match = nil
         for _, chan in ipairs(relaygroup) do
-            if chan[1] == bot.clients[client].name and irc.nameeq(chan[2], to) then
+            if chan[1] == bot.clients[client].name and client:nameeq(chan[2], to) then
                 match = chan
                 break
             end
