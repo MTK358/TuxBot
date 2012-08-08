@@ -124,31 +124,67 @@ local function iserrreply(cmd)
     return string.match(cmd, '[45]%d%d')
 end
 
-local lower_table = {['[']='{', ['\\']='|', [']']='}', ['~']='^'}
+local rfc1459_upper, rfc1459_lower, strict_rfc1459_upper, strict_rfc1459_lower
+do
+    local rfc1459_upper_table = {['{']='[', ['|']='\\', ['}']=']', ['^']='~'}
+    function rfc1459_upper(str)
+        return string.gsub(string.upper(str), '[{|}^]', rfc1459_upper_table)
+    end
 
--- Make a channel name/nick lowercase according to IRC's definition of case.
-local function lower(str)
-    return string.gsub(string.lower(str), '[%[\\%]~]', lower_table)
+    local rfc1459_lower_table = {['[']='{', ['\\']='|', [']']='}', ['~']='^'}
+    function rfc1459_lower(str)
+        return string.gsub(string.lower(str), '[%[\\%]~]', rfc1459_lower_table)
+    end
+
+    local strict_rfc1459_upper_table = {['{']='[', ['|']='\\', ['}']=']'}
+    function strict_rfc1459_upper(str)
+        return string.gsub(string.upper(str), '[{|}]', strict_rfc1459_upper_table)
+    end
+
+    local strict_rfc1459_lower_table = {['[']='{', ['\\']='|', [']']='}'}
+    function strict_rfc1459_lower(str)
+        return string.gsub(string.lower(str), '[%[\\%]]', strict_rfc1459_lower_table)
+    end
 end
 
-local upper_table = {['{']='[', ['|']='\\', ['}']=']', ['^']='~'}
-
--- Make a channel name/nick uppercase according to IRC's definition of case.
-local function upper(str)
-    return string.gsub(string.upper(str), '[{|}^]', upper_table)
+local function rfc1459_nameeq(a, b)
+    return a == b or rfc1459_lower(a) == rfc1459_lower(b)
 end
 
--- See if two channel names/nicks are equal.
--- Unlike the == operator, this takes in to accout the fact that IRC is
--- case-insensitive and has an unusual definition of case. From RFC 2812:
---
--- > Because of IRC's Scandinavian origin, the characters {}|^ are considered
--- > to be the lower case equivalents of the characters []\~, respectively.
--- > This is a critical issue when determining the equivalence of two
--- > nicknames or channel names.
-local function nameeq(a, b)
-    return a == b or lower(a) == lower(b)
+local function strict_rfc1459_nameeq(a, b)
+    return a == b or strict_rfc1459_lower(a) == strict_rfc1459_lower(b)
 end
+
+local function ascii_nameeq(a, b)
+    return a == b or string.lower(a) == string.lower(b)
+end
+
+local rfc1459_name_key_metatable = {
+    __index = function (tbl, key)
+        return rawget(tbl, type(key)=='string' and rfc1459_lower(key) or key)
+    end,
+    __newindex = function (tbl, key, val)
+        rawset(tbl, type(key)=='string' and rfc1459_lower(key) or key, val)
+    end,
+}
+
+local strict_rfc1459_name_key_metatable = {
+    __index = function (tbl, key)
+        return rawget(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key)
+    end,
+    __newindex = function (tbl, key, val)
+        rawset(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key, val)
+    end,
+}
+
+local ascii_name_key_metatable = {
+    __index = function (tbl, key)
+        return rawget(tbl, type(key)=='string' and ascii_lower(key) or key)
+    end,
+    __newindex = function (tbl, key, val)
+        rawset(tbl, type(key)=='string' and ascii_lower(key) or key, val)
+    end,
+}
 
 -- See if a string is a valid channel name.
 local function ischanname(str)
@@ -198,17 +234,6 @@ local function applymode(str, diff)
     table.sort(chars)
     return prefix..table.concat(chars)
 end
-
--- A metatable that makes new keys lowercase using irc.lower, and uses a
--- lowercase version of the key during lookup.
-local name_key_metatable = {
-    __index = function (tbl, key)
-        return rawget(tbl, type(key)=='string' and lower(key) or key)
-    end,
-    __newindex = function (tbl, key, val)
-        rawset(tbl, type(key)=='string' and lower(key) or key, val)
-    end,
-}
 
 -- Manage a connection to an IRC network.
 local Client = {}
@@ -281,6 +306,9 @@ function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)
         ['receivedmessage_post'] = {},
     }
     for k, v in pairs(self._eventhandlers) do setmetatable(v, {__mode='k'}) end
+    function self:upper(str) return rfc1459_upper(str) end
+    function self:lower(str) return rfc1459_lower(str) end
+    function self:nameeq(a, b) return rfc1459_nameeq(a, b) end
     return self
 end
 
@@ -349,6 +377,15 @@ function Client:sendmessageline(line)
            'irc.Client.sendmessage can only be caled in the "connected" and "registering" states')
     self:_trigger_event_handlers('sentmessage', line, os.time())
     self:_send(lowlevel_quote(line)..'\r\n')
+end
+
+function Client:getmodeprefix(mode)
+    for _, pair in ipairs(self.isupport.prefixes) do
+        if mode:find(pair[2], 1, true) then
+            return pair[1]
+        end
+    end
+    return nil
 end
 
 -- Add an event handler. This is the list of possible events:
@@ -552,16 +589,16 @@ function Client:_on_readable()
                         end
                         self:ping()
                     elseif msg.cmd == '005' and #msg.args >= 2 then
-                        for key, val in msg.args[2]:gmatch('(%a+)=([^ ]*)') do
+                        for key, val in table.concat(msg.args, ' ', 2):gmatch('(%a+)=([^ ]*)') do
                             key = key:upper()
                             if key == 'PREFIX' then
-                                local modes, prefixes = val:match('%(([%a+])%)([^ ]+)')
+                                local modes, prefixes = val:match('%((%a+)%)([^ ]+)')
                                 if modes and #modes == #prefixes then
-                                    self.isupport.prefix = {}
+                                    self.isupport.prefixes, self.isupport.prefixesformode, self.isupport.modesforprefix = {}, {}, {}
                                     for i = 1, #modes do
-                                        self.isupport.prefix[#self.isupport.prefix+1] = {prefixes:sub(i, i), modes:sub(i, i)}
-                                        self.isuppots.prefixesformode[modes:sub(i, i)] = prefixes:sub(i, i)
-                                        self.isuppots.modesforprefix[prefixes:sub(i, i)] = modes:sub(i, i)
+                                        self.isupport.prefixes[#self.isupport.prefixes+1] = {prefixes:sub(i, i), modes:sub(i, i)}
+                                        self.isupport.prefixesformode[modes:sub(i, i)] = prefixes:sub(i, i)
+                                        self.isupport.modesforprefix[prefixes:sub(i, i)] = modes:sub(i, i)
                                     end
                                 end
                             elseif key == 'CHANMODES' then
@@ -573,6 +610,23 @@ function Client:_on_readable()
                                     self.isupport.chanmodes.c,
                                     self.isupport.chanmodes.d = a, b, c, d
                                 end
+                            elseif key == 'CASEMAPPING' then
+                                if val == 'ascii' then
+                                    function self:upper(str) return string.upper(str) end
+                                    function self:lower(str) return string.lower(str) end
+                                    function self:nameeq(a, b) return ascii_nameeq(a, b) end
+                                    self.name_key_metatable = ascii_name_key_metatable
+                                elseif val == 'strict-rfc1459' then
+                                    function self:upper(str) return strict_rfc1459_upper(str) end
+                                    function self:lower(str) return strict_rfc1459_lower(str) end
+                                    function self:nameeq(a, b) return strict_rfc1459_nameeq(a, b) end
+                                    self.name_key_metatable = strict_rfc1459_name_key_metatable
+                                else -- rfc1459
+                                    function self:upper(str) return rfc1459_upper(str) end
+                                    function self:lower(str) return rfc1459_lower(str) end
+                                    function self:nameeq(a, b) return rfc1459_nameeq(a, b) end
+                                    self.name_key_metatable = rfc1459_name_key_metatable
+                                end
                             end
                         end
                     elseif msg.cmd == 'PONG' and #msg.args >= 2 and tostring(self._pingtime) == msg.args[2] and self.state == 'connected' then
@@ -581,7 +635,7 @@ function Client:_on_readable()
                         self:_trigger_event_handlers('connstatechanged', 'ping', lag)
                         self._timer:cancel()
                         self._timer = self._eventloop:timer(self.netinfo.ping_interval or self.defaults.ping_interval, function () self:ping() end)
-                    elseif msg.cmd == 'MODE' and #msg.args == 2 and nameeq(msg.args[1], self._nick) then
+                    elseif msg.cmd == 'MODE' and #msg.args == 2 and self:nameeq(msg.args[1], self._nick) then
                         self.connstate.mode = applymode(self.connstate.mode, msg.args[2])
                         self:_trigger_event_handlers('connstatechanged', 'mode', self.connstate.mode)
                     elseif msg.cmd == 'PING' and (self.state == 'connected' or self.state == 'registering') then
@@ -591,11 +645,11 @@ function Client:_on_readable()
                             self:sendmessage('PONG')
                         end
                     elseif msg.cmd == 'NICK' and msg.sender.nick and #msg.args >= 1 then
-                        if nameeq(msg.sender.nick, self._nick) then
+                        if self:nameeq(msg.sender.nick, self._nick) then
                             self:_trigger_event_handlers('nickchanged', msg.args[1], self._nick)
                             self._nick = msg.args[1]
                         end
-                    elseif msg.cmd == 'QUIT' and msg.sender.nick and nameeq(msg.sender.nick, self._nick) then
+                    elseif msg.cmd == 'QUIT' and msg.sender.nick and self:nameeq(msg.sender.nick, self._nick) then
                         self._intentionally_quit = true
                     elseif msg.cmd == ':CTCP' then
                         if msg.args[2] == 'FINGER' then
@@ -739,9 +793,9 @@ function ChannelTracker.new(client)
     self.identinfo = client.identinfo
     self.defaults = client.defaults
     self._unknownprefixes = {}
-    setmetatable(self._unknownprefixes, name_key_metatable)
+    setmetatable(self._unknownprefixes, client.name_key_metatable)
     self.chanstates = {}
-    setmetatable(self.chanstates, name_key_metatable)
+    setmetatable(self.chanstates, client.name_key_metatable)
     self._eventhandlers = {
         ['joinedchannel'] = {},
         ['leftchannel'] = {},
@@ -773,9 +827,9 @@ function ChannelTracker.new(client)
     self._statehandler = function (client, state)
         if state == 'connected' then
             self._unknownprefixes = {}
-            setmetatable(self._unknownprefixes, name_key_metatable)
+            setmetatable(self._unknownprefixes, client.name_key_metatable)
             self.chanstates = {}
-            setmetatable(self.chanstates, name_key_metatable)
+            setmetatable(self.chanstates, client.name_key_metatable)
         end
     end
     client:add_event_handler('receivedmessage_pre', self._msghandler)
@@ -810,13 +864,13 @@ end
 ChannelTracker._msghandlers = {
     ['JOIN'] = function (self, msg)
         if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
-        if nameeq(self._client:get_nick(), msg.sender.nick) then
+        if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = {
                 name = msg.args[1],
                 members = {},
                 mode = '+',
             }
-            setmetatable(chan.members, name_key_metatable)
+            setmetatable(chan.members, msg.client.name_key_metatable)
             chan.members[self._client:get_nick()] = {sender={nick=self._client:get_nick()}, mode='+'}
             self.chanstates[msg.args[1]] = chan
             self:_trigger_event_handlers('joinedchannel', msg.args[1], chan)
@@ -836,7 +890,7 @@ ChannelTracker._msghandlers = {
     end,
     ['PART'] = function (self, msg)
         if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
-        if nameeq(self._client:get_nick(), msg.sender.nick) then
+        if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 for k, v in pairs(chan.members) do
@@ -858,7 +912,7 @@ ChannelTracker._msghandlers = {
     end,
     ['KICK'] = function (self, msg)
         if not (#msg.args >= 2) then return end
-        if nameeq(self._client:get_nick(), msg.args[2]) then
+        if self._client:nameeq(self._client:get_nick(), msg.args[2]) then
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 for k, v in pairs(chan.members) do
@@ -881,7 +935,7 @@ ChannelTracker._msghandlers = {
     ['QUIT'] = function (self, msg)
         if not (msg.sender and msg.sender.nick) then return end
         self._unknownprefixes[msg.sender.nick] = nil
-        if not nameeq(self._client:get_nick(), msg.sender.nick) then
+        if not self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             for channame, chan in pairs(self.chanstates) do
                 if chan.members[msg.sender.nick] then
                     chan.members[msg.sender.nick] = nil
@@ -981,7 +1035,7 @@ ChannelTracker._msghandlers = {
         local chan = self.chanstates[msg.args[2]]
         if chan then
             chan.topic = msg.args[3]
-            self:_trigger_event_handlers('channelmode', msg.args[2], chan.topic, false)
+            self:_trigger_event_handlers('channeltopic', msg.args[2], chan.topic, false)
         end
     end,
 }
@@ -997,9 +1051,9 @@ function AutoJoiner.new(client)
     self._netinfo = client.netinfo
     self._defaults = client.defaults
     self.rejoining_channels = {}
-    setmetatable(self.rejoining_channels, name_key_metatable)
+    setmetatable(self.rejoining_channels, client.name_key_metatable)
     self.on_channels = {}
-    setmetatable(self.on_channels, name_key_metatable)
+    setmetatable(self.on_channels, client.name_key_metatable)
     for _, i in ipairs(self._netinfo.autojoin or {}) do self.rejoining_channels[i] = {} end
 
     local function timer_cb(channel)
@@ -1023,19 +1077,19 @@ function AutoJoiner.new(client)
     end
 
     self._on_message = function (client, msg)
-        if msg.cmd == 'JOIN' and msg.sender.nick and nameeq(msg.sender.nick, client:get_nick()) then
+        if msg.cmd == 'JOIN' and msg.sender.nick and self._client:nameeq(msg.sender.nick, client:get_nick()) then
             self.on_channels[msg.args[1]] = true
             if self.rejoining_channels[msg.args[1]] then
                 local timer = self.rejoining_channels[msg.args[1]]._timer
                 if timer then timer:cancel() end
                 self.rejoining_channels[msg.args[1]] = nil
             end
-        elseif msg.cmd == 'PART' and msg.sender.nick and nameeq(msg.sender.nick, client:get_nick()) then
+        elseif msg.cmd == 'PART' and msg.sender.nick and self._client:nameeq(msg.sender.nick, client:get_nick()) then
             self.on_channels[msg.args[1]] = nil
             local rejoininfo = self.rejoining_channels[msg.args[1]]
             if rejoininfo and rejoininfo._timer then rejoininfo._timer:cancel() end
             self.rejoining_channels[msg.args[1]] = nil
-        elseif msg.cmd == 'KICK' and #msg.args >= 2 and nameeq(msg.args[2], client:get_nick()) then
+        elseif msg.cmd == 'KICK' and #msg.args >= 2 and self._client:nameeq(msg.args[2], client:get_nick()) then
             self.on_channels[msg.args[1]] = nil
             local rejoininfo = self.rejoining_channels[msg.args[1]]
             if rejoininfo and rejoininfo._timer then rejoininfo._timer:cancel() end
@@ -1083,15 +1137,21 @@ return {
     enable_ssl = enable_ssl,
     sender_prefix_to_table = sender_prefix_to_table,
     message_line_to_table = message_line_to_table,
-    lower = lower,
-    upper = upper,
-    nameeq = nameeq,
+    rfc1459_lower = rfc1459_lower,
+    rfc1459_upper = rfc1459_upper,
+    rfc1459_nameeq = rfc1459_nameeq,
+    strict_rfc1459_lower = strict_rfc1459_lower,
+    strict_rfc1459_upper = strict_rfc1459_upper,
+    strict_rfc1459_nameeq = strict_rfc1459_nameeq,
+    rfc1459_name_key_metatable = rfc1459_name_key_metatable,
+    strict_rfc1459_name_key_metatable = strict_rfc1459_name_key_metatable,
+    ascii_name_key_metatable = ascii_name_key_metatable,
+    ascii_nameeq = ascii_nameeq,
     isnumreply = isnumreply,
     iserrreply = iserrreply,
     ischanname = ischanname,
     isnick = isnick,
     applymode = applymode,
-    name_key_metatable = name_key_metatable,
     Client = Client,
     ChannelTracker = ChannelTracker,
     AutoJoiner = AutoJoiner,
