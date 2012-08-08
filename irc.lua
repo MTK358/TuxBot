@@ -481,9 +481,22 @@ function Client:_on_ssl_handshake_done()
     self._sendbuf = ''
     self.state = 'registering'
     self.connstate = {
-        prefixes = {['@']='o', ['+']='v'},
         mode = '+',
         ping = nil,
+    }
+    self.isupport = {
+        prefixes = {
+            {'@', 'o'},
+            {'+', 'v'},
+        },
+        modesforprefix = {['@'] = 'o', ['+'] = 'v'},
+        prefixesformode = {['o'] = '@', ['v'] = '+'},
+        chanmodes = {
+            a = 'eIbq',
+            b = 'k',
+            c = 'l',
+            d = 'CFLMOPcgimnprstz',
+        },
     }
     self:_trigger_event_handlers('statechanged', self.state)
     local modemask = 0
@@ -538,6 +551,30 @@ function Client:_on_readable()
                             self:_trigger_event_handlers('connstatechanged', 'serveraddress', msg.sender.host)
                         end
                         self:ping()
+                    elseif msg.cmd == '005' and #msg.args >= 2 then
+                        for key, val in msg.args[2]:gmatch('(%a+)=([^ ]*)') do
+                            key = key:upper()
+                            if key == 'PREFIX' then
+                                local modes, prefixes = val:match('%(([%a+])%)([^ ]+)')
+                                if modes and #modes == #prefixes then
+                                    self.isupport.prefix = {}
+                                    for i = 1, #modes do
+                                        self.isupport.prefix[#self.isupport.prefix+1] = {prefixes:sub(i, i), modes:sub(i, i)}
+                                        self.isuppots.prefixesformode[modes:sub(i, i)] = prefixes:sub(i, i)
+                                        self.isuppots.modesforprefix[prefixes:sub(i, i)] = modes:sub(i, i)
+                                    end
+                                end
+                            elseif key == 'CHANMODES' then
+                                local a, b, c, d = val:match('^(%a*),(%a*),(%a*),(%a*)$')
+                                if a then
+                                    self.isupport.chanmodes = {}
+                                    self.isupport.chanmodes.a,
+                                    self.isupport.chanmodes.b,
+                                    self.isupport.chanmodes.c,
+                                    self.isupport.chanmodes.d = a, b, c, d
+                                end
+                            end
+                        end
                     elseif msg.cmd == 'PONG' and #msg.args >= 2 and tostring(self._pingtime) == msg.args[2] and self.state == 'connected' then
                         local lag = socket.gettime() - self._pingtime
                         self.connstate.ping = lag
@@ -872,29 +909,39 @@ ChannelTracker._msghandlers = {
     end,
     ['MODE'] = function (self, msg)
         if not (#msg.args >= 2) then return end
-        if ischanname(msg.args[1]) then
-            local chan = self.chanstates[msg.args[1]]
-            if chan then
-                -- MODE #example +xyz
-                if #msg.args == 2 then
-                    chan.mode = applymode(chan.mode, msg.args[2])
-                    self:_trigger_event_handlers('channelmode', msg.args[1], chan.mode, true)
-                -- MODE #example +abc nick1 nick2 nick3
-                elseif #msg.args[2] > 3 and #msg.args == #msg.args[2] + 1 then
-                    for i = 1,#msg.args[2]-1 do
-                        local member = chan.members[msg.args[i + 2]]
-                        if member then
-                            member.mode = applymode(member.mode, msg.args[2]:sub(1, 1) .. msg.args[2]:sub(i+1, i+1))
-                            self:_trigger_event_handlers('membermode', msg.args[1], msg.args[i + 2], member.mode)
+        local chan = self.chanstates[msg.args[1]]
+        if chan then
+            for argnum = 2, #msg.args do
+                local positive, modeargnum = true, argnum
+                for charnum = 1, #msg.args[modeargnum] do
+                    local char = msg.args[modeargnum]:sub(charnum, charnum)
+                    if char == '+' then
+                        positive = true
+                    elseif char == '-' then
+                        positive = false
+                    else
+                        local hasparam, ismembermode = false, false
+                        if self._client.isupport.prefixesformode[char] then
+                            hasparam, ismembermode = true, true
+                        elseif self._client.isupport.chanmodes.a:find(char, 1, true) then
+                            hasparam = true
+                        elseif self._client.isupport.chanmodes.b:find(char, 1, true) then
+                            hasparam = true
+                        elseif self._client.isupport.chanmodes.c:find(char, 1, true) then
+                            hasparam = positive
                         end
-                    end
-                -- MODE #example +a nick1 +b nick2 +c nick3
-                elseif #msg.args % 2 == 1 then
-                    for i = 2,#msg.args-1,2 do
-                        local member = chan.members[msg.args[i + 1]]
-                        if member then
-                            member.mode = applymode(member.mode, msg.args[i])
-                            self:_trigger_event_handlers('membermode', msg.args[1], msg.args[i + 1], member.mode)
+                        if hasparam then
+                            argnum = argnum + 1
+                            if ismembermode then
+                                local arg = msg.args[argnum]
+                                if arg then
+                                    local member = chan.members[arg]
+                                    if member then
+                                        member.mode = applymode(member.mode, (positive and '+' or '-')..char)
+                                        self:_trigger_event_handlers('membermode', msg.args[1], arg, member.mode)
+                                    end
+                                end
+                            end
                         end
                     end
                 end
@@ -907,9 +954,9 @@ ChannelTracker._msghandlers = {
         if chan then
             for member in msg.args[4]:gmatch('[^ ]+') do
                 local nick, mode = nil, '+'
-                if #member >= 2 and self._client.connstate.prefixes[member:sub(1, 1)] then
+                if #member >= 2 and self._client.isupport.modesforprefix[member:sub(1, 1)] then
                     nick = member:sub(2, -1)
-                    mode = '+'..self._client.connstate.prefixes[member:sub(1, 1)]
+                    mode = '+'..self._client.isupport.modesforprefix[member:sub(1, 1)]
                 else
                     nick = member
                 end
