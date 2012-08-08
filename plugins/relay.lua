@@ -114,6 +114,17 @@ local msg_handlers = {
             relay(text, relayinfo)
         end
     end,]]
+    ['JOIN'] = function (msg)
+        local active_members_key = ('%s %s %s'):format(irc.lower(msg.sender.nick), irc.lower(msg.args[1]), bot.clients[msg.client].name)
+        local timer = active_members[active_members_key]
+        if timer then
+            local relayinfo = isrelayed(msg)
+            if relayinfo then
+                local text = ('\0036* \002%s\002 has joined \002%s@%s\002'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1])
+                relay(text, relayinfo)
+            end
+        end
+    end,
     ['PART'] = function (msg)
         local active_members_key = ('%s %s %s'):format(irc.lower(msg.sender.nick), irc.lower(msg.args[1]), bot.clients[msg.client].name)
         local timer = active_members[active_members_key]
@@ -124,8 +135,6 @@ local msg_handlers = {
                 if msg.args[2] then text = ('%s (%s)'):format(text, msg.args[2]) end
                 relay(text, relayinfo)
             end
-            active_members[active_members_key] = nil
-            timer:cancel()
         end
     end,
     ['QUIT'] = function (msg)
@@ -139,8 +148,6 @@ local msg_handlers = {
                     if msg.args[1] then text = ('%s (%s)'):format(text, msg.args[1]) end
                     relay(text, relayinfo)
                 end
-                active_members[active_members_key] = nil
-                timer:cancel()
             end
         end
     end,
