@@ -39,7 +39,7 @@ end
 local active_members = {}
 
 local function on_active(nick, channel, client)
-    local active_members_key = ('%s %s %s'):format(irc.lower(nick), irc.lower(channel), bot.clients[client].name)
+    local active_members_key = ('%s %s %s'):format(client:lower(nick), client:lower(channel), bot.clients[client].name)
     local timer = active_members[active_members_key]
     if timer then timer:cancel() end
     active_members[active_members_key] = bot.eventloop:timer(8 * 60 * 60, function () active_members[active_members_key] = nil end)
@@ -115,7 +115,7 @@ local msg_handlers = {
         end
     end,]]
     ['JOIN'] = function (msg)
-        local active_members_key = ('%s %s %s'):format(irc.lower(msg.sender.nick), irc.lower(msg.args[1]), bot.clients[msg.client].name)
+        local active_members_key = ('%s %s %s'):format(msg.client:lower(msg.sender.nick), msg.client:lower(msg.args[1]), bot.clients[msg.client].name)
         local timer = active_members[active_members_key]
         if timer then
             local relayinfo = isrelayed(msg)
@@ -126,7 +126,7 @@ local msg_handlers = {
         end
     end,
     ['PART'] = function (msg)
-        local active_members_key = ('%s %s %s'):format(irc.lower(msg.sender.nick), irc.lower(msg.args[1]), bot.clients[msg.client].name)
+        local active_members_key = ('%s %s %s'):format(msg.client:lower(msg.sender.nick), msg.client:lower(msg.args[1]), bot.clients[msg.client].name)
         local timer = active_members[active_members_key]
         if timer then
             local relayinfo = isrelayed(msg)
@@ -139,7 +139,7 @@ local msg_handlers = {
     end,
     ['QUIT'] = function (msg)
         for _, chanstate in pairs(bot.clients[msg.client].tracker.chanstates) do
-            local active_members_key = ('%s %s %s'):format(irc.lower(msg.sender.nick), irc.lower(chanstate.name), bot.clients[msg.client].name)
+            local active_members_key = ('%s %s %s'):format(msg.client:lower(msg.sender.nick), msg.client:lower(chanstate.name), bot.clients[msg.client].name)
             local timer = active_members[active_members_key]
             if timer then
                 local relayinfo = isrelayed(msg, chanstate.name)
