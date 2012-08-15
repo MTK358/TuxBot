@@ -96,10 +96,10 @@ local function message_line_to_table(line, mynick, client)
         if args[2]:match('^\001.*[^\\]\001$') then
             cmdtype = cmdtype == 'PRIVMSG' and ':CTCP' or ':CTCPREPLY'
             local s = ctcp_dequote(args[2]:sub(2, -2))
-            local i = s:find(' [^ ]')
-            if i then
-                args[2] = s:sub(1, i - 1):upper()
-                args[3] = s:sub(i + 1, -1)
+            local c, a = s:match('^([^ ]+) (.*)$')
+            if c then
+                args[2] = c:upper()
+                args[3] = a
             else
                 args[2] = s:upper()
             end
@@ -179,10 +179,10 @@ local strict_rfc1459_name_key_metatable = {
 
 local ascii_name_key_metatable = {
     __index = function (tbl, key)
-        return rawget(tbl, type(key)=='string' and ascii_lower(key) or key)
+        return rawget(tbl, type(key)=='string' and string.lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
-        rawset(tbl, type(key)=='string' and ascii_lower(key) or key, val)
+        rawset(tbl, type(key)=='string' and string.lower(key) or key, val)
     end,
 }
 
@@ -247,6 +247,7 @@ local default_defaults = {
     registering_timeout = 120,           -- the amount of time to wait for the 001 (RPL_WELCOME) reply before autoreconnecting
     ping_interval = 105,                 -- the interval between pings
     ping_timeout = 15,                   -- how long to wait for a ping rely before autoreconnecting
+    reconnection_interval_reset_time = 5*60,   -- how long to wait after connection to reset autoreconnect interval to minimum
     initial_reconnection_interval = 5,   -- the initial amount of time to wait between autoreconnect attempts (nil for no autoreconnect)
     reconnection_interval_scale = 1.2,   -- multiply the interval by this amount after every autoreconnect attempt
     max_reconnection_interval = 30 * 60, -- the max amount of time to wait between autoreconnect attempts
@@ -420,12 +421,24 @@ function Client:_reconnect(reason)
     if not self._reconnecttime then
         self._reconnecttime = self.netinfo.initial_reconnection_interval or self.defaults.initial_reconnection_interval
     else
-        self._reconnecttime = self._reconnecttime * (self.netinfo.reconnection_interval_scale or self.defaults.reconnection_interval_scale)
-        local max =  self.netinfo.max_reconnection_interval or self.defaults.max_reconnection_interval
-        if self._reconnecttime > max then self._reconnecttime = max end
+        if self._time_last_connected then
+            local diff = os.difftime(os.time(), self._time_last_connected)
+            local resettime = self.netinfo.reconnection_interval_reset_time or self.defaults.reconnection_interval_reset_time
+            if diff > resettime then
+                self._reconnecttime = self.netinfo.initial_reconnection_interval or self.defaults.initial_reconnection_interval
+            else
+                self._reconnecttime = self._reconnecttime * (self.netinfo.reconnection_interval_scale or self.defaults.reconnection_interval_scale)
+                local max =  self.netinfo.max_reconnection_interval or self.defaults.max_reconnection_interval
+                if self._reconnecttime > max then self._reconnecttime = max end
+            end
+        else
+            self._reconnecttime = self._reconnecttime * (self.netinfo.reconnection_interval_scale or self.defaults.reconnection_interval_scale)
+            local max =  self.netinfo.max_reconnection_interval or self.defaults.max_reconnection_interval
+            if self._reconnecttime > max then self._reconnecttime = max end
+        end
     end
     self.state = 'reconnecting'
-    self:_trigger_event_handlers('statechanged', self.state, reason, time)
+    self:_trigger_event_handlers('statechanged', self.state, reason, self._reconnecttime)
     self._timer = self._eventloop:timer(self._reconnecttime, function () self:connect() end)
 end
 
@@ -573,7 +586,7 @@ function Client:_on_readable()
                     self:_trigger_event_handlers('receivedmessage_pre', msg)
                     if msg.cmd == '001' and #msg.args >= 1 and self.state == 'registering' then
                         self._timer:cancel()
-                        self._reconnecttime = nil
+                        self._time_last_connected = os.time()
                         if msg.args[1] ~= self._nick then
                             self:_trigger_event_handlers('nickchanged', msg.args[1], self._nick)
                             self._nick = msg.args[1]
@@ -871,7 +884,7 @@ ChannelTracker._msghandlers = {
                 mode = '+',
             }
             setmetatable(chan.members, msg.client.name_key_metatable)
-            chan.members[self._client:get_nick()] = {sender={nick=self._client:get_nick()}, mode='+'}
+            chan.members[self._client:get_nick()] = {prefix={nick=self._client:get_nick()}, mode='+'}
             self.chanstates[msg.args[1]] = chan
             self:_trigger_event_handlers('joinedchannel', msg.args[1], chan)
             if self.netinfo.send_names_on_join or self.defaults.send_names_on_join then self._client:sendmessage('NAMES', msg.args[1]) end
@@ -882,7 +895,7 @@ ChannelTracker._msghandlers = {
             if chan then
                 chan.members[msg.sender.nick] = {
                     mode = '+',
-                    hostmask = msg.sender,
+                    prefix = msg.sender,
                 }
                 self:_trigger_event_handlers('memberadded', msg.args[1], msg.sender.nick, 'JOIN')
             end
@@ -949,6 +962,7 @@ ChannelTracker._msghandlers = {
         for channame, chan in pairs(self.chanstates) do
             if chan.members[msg.sender.nick] then
                 chan.members[msg.args[1]], chan.members[msg.sender.nick] = chan.members[msg.sender.nick], nil
+                chan.members[msg.args[1]].prefix.nick = msg.args[1]
                 self:_trigger_event_handlers('membernick', channame, msg.sender.nick, msg.args[1])
             end
         end
@@ -1015,7 +1029,7 @@ ChannelTracker._msghandlers = {
                     nick = member
                 end
                 if (not chan.members[nick]) and isnick(nick) then
-                    chan.members[nick] = {mode = mode, sender = {nick=nick}}
+                    chan.members[nick] = {mode = mode, prefix = {nick=nick}}
                     self:_trigger_event_handlers('memberadded', msg.args[3], nick, 'NAMES')
                     self._unknownprefixes[nick] = true
                 end
