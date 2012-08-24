@@ -93,7 +93,7 @@ local function message_line_to_table(line, mynick, client)
     for i in (argstr or remaining):gmatch('[^ ]+') do args[#args+1] = i end
     args[#args+1] = last
     if (cmdtype == 'PRIVMSG' or cmdtype == 'NOTICE') and #args >= 2 then
-        if args[2]:match('^\001.*[^\\]\001$') then
+        if args[2]:match('^\001.+\001$') then
             cmdtype = cmdtype == 'PRIVMSG' and ':CTCP' or ':CTCPREPLY'
             local s = ctcp_dequote(args[2]:sub(2, -2))
             local c, a = s:match('^([^ ]+) (.*)$')
