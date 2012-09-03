@@ -100,8 +100,10 @@ local function message_line_to_table(line, mynick, client)
             if c then
                 args[2] = c:upper()
                 args[3] = a
+                args[4] = nil
             else
                 args[2] = s:upper()
+                args[3] = nil
             end
         end
     end
@@ -313,6 +315,17 @@ function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)
     return self
 end
 
+function Client:name_key_metatable()
+    return {
+        __index = function (tbl, key)
+            return rawget(tbl, type(key)=='string' and self:lower(key) or key)
+        end,
+        __newindex = function (tbl, key, val)
+            rawset(tbl, type(key)=='string' and self:lower(key) or key, val)
+        end,
+    }
+end
+
 -- Change your nick. Unlike sending a NICK command, this also works if the
 -- Client is not connected. If the Client is registering, the change doesn't
 -- work immediately, the nick will only really be cahnged once the client
@@ -365,7 +378,9 @@ function Client:sendmessage(cmd, ...)
            'irc.Client.sendmessage can only be caled in the "connected" and "registering" states')
     local line, argcount = cmd, select('#', ...)
     for i = 1, argcount do
-        line = line..(i == argcount and ' :' or ' ')..(select(i, ...))
+        local arg = select(i, ...)
+        if not arg then break end
+        line = line..(i == argcount and ' :' or ' ')..arg
     end
     self:_trigger_event_handlers('sentmessage', line, os.time())
     self:_send(lowlevel_quote(line)..'\r\n')
@@ -410,6 +425,8 @@ end
 function Client:remove_event_handler(event, cb)
     self._eventhandlers[event][cb] = nil
 end
+Client.add_callback = Client.add_event_handler
+Client.remove_callback = Client.remove_event_handler
 
 -- (private) clean up the current connection and reconnect after an interval
 function Client:_reconnect(reason)
@@ -628,17 +645,14 @@ function Client:_on_readable()
                                     function self:upper(str) return string.upper(str) end
                                     function self:lower(str) return string.lower(str) end
                                     function self:nameeq(a, b) return ascii_nameeq(a, b) end
-                                    self.name_key_metatable = ascii_name_key_metatable
                                 elseif val == 'strict-rfc1459' then
                                     function self:upper(str) return strict_rfc1459_upper(str) end
                                     function self:lower(str) return strict_rfc1459_lower(str) end
                                     function self:nameeq(a, b) return strict_rfc1459_nameeq(a, b) end
-                                    self.name_key_metatable = strict_rfc1459_name_key_metatable
                                 else -- rfc1459
                                     function self:upper(str) return rfc1459_upper(str) end
                                     function self:lower(str) return rfc1459_lower(str) end
                                     function self:nameeq(a, b) return rfc1459_nameeq(a, b) end
-                                    self.name_key_metatable = rfc1459_name_key_metatable
                                 end
                             end
                         end
@@ -806,9 +820,9 @@ function ChannelTracker.new(client)
     self.identinfo = client.identinfo
     self.defaults = client.defaults
     self._unknownprefixes = {}
-    setmetatable(self._unknownprefixes, client.name_key_metatable)
+    setmetatable(self._unknownprefixes, client:name_key_metatable())
     self.chanstates = {}
-    setmetatable(self.chanstates, client.name_key_metatable)
+    setmetatable(self.chanstates, client:name_key_metatable())
     self._eventhandlers = {
         ['joinedchannel'] = {},
         ['leftchannel'] = {},
@@ -840,9 +854,9 @@ function ChannelTracker.new(client)
     self._statehandler = function (client, state)
         if state == 'connected' then
             self._unknownprefixes = {}
-            setmetatable(self._unknownprefixes, client.name_key_metatable)
+            setmetatable(self._unknownprefixes, client:name_key_metatable())
             self.chanstates = {}
-            setmetatable(self.chanstates, client.name_key_metatable)
+            setmetatable(self.chanstates, client:name_key_metatable())
         end
     end
     client:add_event_handler('receivedmessage_pre', self._msghandler)
@@ -862,10 +876,12 @@ end
 function ChannelTracker:add_event_handler(event, cb)
     self._eventhandlers[event][cb] = true
 end
+ChannelTracker.add_callback = ChannelTracker.add_event_handler
 
 function ChannelTracker:remove_event_handler(event, cb)
     self._eventhandlers[event][cb] = nil
 end
+ChannelTracker.remove_callback = ChannelTracker.remove_event_handler
 
 function ChannelTracker:_remove_from_unknownprefixes(nick)
     for _, chan in pairs(self.chanstates) do
@@ -876,14 +892,14 @@ end
 
 ChannelTracker._msghandlers = {
     ['JOIN'] = function (self, msg)
-        if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
+        if not (#msg.args >= 1 and ischanname(msg.args[1]) and msg.sender and msg.sender.nick) then return end
         if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = {
                 name = msg.args[1],
                 members = {},
                 mode = '+',
             }
-            setmetatable(chan.members, msg.client.name_key_metatable)
+            setmetatable(chan.members, msg.client:name_key_metatable())
             chan.members[self._client:get_nick()] = {prefix={nick=self._client:get_nick()}, mode='+'}
             self.chanstates[msg.args[1]] = chan
             self:_trigger_event_handlers('joinedchannel', msg.args[1], chan)
@@ -979,20 +995,20 @@ ChannelTracker._msghandlers = {
         if not (#msg.args >= 2) then return end
         local chan = self.chanstates[msg.args[1]]
         if chan then
-            for argnum = 2, #msg.args do
-                local positive, modeargnum = true, argnum
-                for charnum = 1, #msg.args[modeargnum] do
-                    local char = msg.args[modeargnum]:sub(charnum, charnum)
+            local argnum = 2
+            while argnum <= #msg.args do -- because a for loop doesn't let you modify the number in the body of the loop
+                local positive = true
+                for char in msg.args[argnum]:gsub('.') do
                     if char == '+' then
                         positive = true
                     elseif char == '-' then
                         positive = false
-                    else
+                    elseif char:match('%w') then
                         local hasparam, ismembermode = false, false
                         if self._client.isupport.prefixesformode[char] then
-                            hasparam, ismembermode = true, true
+                            hasparam, ismembermode = 'nick', true
                         elseif self._client.isupport.chanmodes.a:find(char, 1, true) then
-                            hasparam = true
+                            hasparam, ismembermode = 'nick', true
                         elseif self._client.isupport.chanmodes.b:find(char, 1, true) then
                             hasparam = true
                         elseif self._client.isupport.chanmodes.c:find(char, 1, true) then
@@ -1011,8 +1027,13 @@ ChannelTracker._msghandlers = {
                                 end
                             end
                         end
+                        if (not ismembermode) and hasparam ~= 'nick' then
+                            chan.mode = applymode(chan.mode, (positive and '+' or '-')..char)
+                            self:_trigger_event_handlers('channelmode', chan.name, chan.mode, true)
+                        end
                     end
                 end
+                argnum = argnum + 1
             end
         end
     end,
@@ -1065,9 +1086,9 @@ function AutoJoiner.new(client)
     self._netinfo = client.netinfo
     self._defaults = client.defaults
     self.rejoining_channels = {}
-    setmetatable(self.rejoining_channels, client.name_key_metatable)
+    setmetatable(self.rejoining_channels, client:name_key_metatable())
     self.on_channels = {}
-    setmetatable(self.on_channels, client.name_key_metatable)
+    setmetatable(self.on_channels, client:name_key_metatable())
     for _, i in ipairs(self._netinfo.autojoin or {}) do self.rejoining_channels[i] = {} end
 
     local function timer_cb(channel)
