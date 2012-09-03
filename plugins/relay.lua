@@ -1,5 +1,4 @@
-
-local issendingrealy = false
+local issendingrelay = false
 
 local function nickhash(nick)
     local num = 0
