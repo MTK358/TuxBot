@@ -95,6 +95,6 @@ local function synopsis_handler(msg, arg)
 end
 
 bot.commands['man'] = {man_handler, help='man <section> <name> -- Get a link to a man page.'}
-bot.commands['synopsis'] = {synopsis_handler, help='synopsis <section> <name> -- Get the synopsis section of a man page.'}
-bot.commands['syn'] = {synopsis_handler, help='syn <section> <name> -- same as "synopsis"'}
+bot.commands['synopsis'] = {synopsis_handler, help='synopsis <section> <name> -- Get the synopsis section of a man page.', mininterval=8}
+bot.commands['syn'] = {synopsis_handler, help='syn <section> <name> -- same as "synopsis"', mininterval=8}
 

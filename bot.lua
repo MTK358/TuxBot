@@ -29,6 +29,23 @@ local function isignored(msg)--{{{
     return false
 end--}}}
 
+local function send_multiline(msg, lines, notice)
+    if type(lines) == 'string' then
+        local tbl = {}
+        for line in lines:gmatch('[^\n]+') do tbl[#tbl+1] = line end
+        lines = tbl
+    end
+    local i = 1
+    local function timercb()
+        msg.client[notice=='notice'and'sendnotice'or'sendprivmsg'](msg.client, irc.ischanname(msg.args[1]) or msg.sender.nick, lines[i])
+        i = i + 1
+        if i <= #lines then
+            eventloop:timer(config.multiline_delay, timercb)
+        end
+    end
+    timercb()
+end
+
 local function create_plugin_env(plugin, config)--{{{
     plugin.event_handlers = {}
     plugin.commands = {}
@@ -40,10 +57,12 @@ local function create_plugin_env(plugin, config)--{{{
             eventloop = eventloop,
             commands = plugin.commands,
             event_handlers = plugin.event_handlers,
+            event_callbacks = plugin.event_handlers,
             clients = clients,
             clientsbyname = clientsbyname,
             plugins = plugins,
             isignored = isignored,
+            send_multiline = send_multiline,
             reply = function (msg, text)
                 msg.client:sendprivmsg(irc.ischanname(msg.args[1]) or msg.sender.nick, text)
             end
@@ -241,6 +260,7 @@ local function load_config()--{{{
 
     config.default_min_cmd_interval = config.default_min_cmd_interval or 1.5
     config.max_cmdq_size = config.max_cmdq_size or 20
+    config.multiline_delay = config.multiline_delay or 0.333
 
     for name, ident in pairs(config.identities) do
         ident.name = name
@@ -285,7 +305,7 @@ local function load_config()--{{{
                     print(('***** error in "%s" plugin: %s'):format(name, err))
                 end
             else
-                print(('***** failed to load "%s" plugin (filename: "%s")'):format(name, info[1]))
+                print(('***** failed to load "%s" plugin (filename: "%s", error: "%s")'):format(name, info[1], err))
             end
         end
     end
@@ -335,7 +355,7 @@ local stdin_commands = {--{{{
                 print(('***** error in "%s" plugin: %s'):format(name, err))
             end
         else
-            print(('***** failed to load "%s" plugin (filename: "%s")'):format(name, info.filename))
+            print(('***** failed to load "%s" plugin (filename: "%s", error: "%s")'):format(name, info.filename, err))
         end
     end,
     ['^%s*s%s+(%S+)%s+(%S.*)$'] = function (net, line)
