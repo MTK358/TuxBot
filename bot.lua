@@ -19,7 +19,7 @@ local plugins = {}
 local eventhandlers = {}
 setmetatable(eventhandlers, {__mode='v'})
 
-local function isignored(msg)
+local function isignored(msg)--{{{
     local ignorelist = msg.client.netinfo._ignore
     if ignorelist then
         for _, i in pairs(ignorelist) do
@@ -27,9 +27,9 @@ local function isignored(msg)
         end
     end
     return false
-end
+end--}}}
 
-local function create_plugin_env(plugin, config)
+local function create_plugin_env(plugin, config)--{{{
     plugin.event_handlers = {}
     plugin.commands = {}
     local env = {
@@ -52,9 +52,9 @@ local function create_plugin_env(plugin, config)
     for k, v in pairs(_G) do env[k] = v end
     plugin.env = env
     return env
-end
+end--}}}
 
-local function send_event_to_plugins(event, ...)
+local function send_event_to_plugins(event, ...)--{{{
     for k, v in pairs(plugins) do
         local handler = v.event_handlers[event]
         if type(handler) == 'function' then
@@ -69,9 +69,23 @@ local function send_event_to_plugins(event, ...)
             end
         end
     end
-end
+end--}}}
 
-local function process_prefixed_command(msg, line)
+local cmdq = {}
+local next_command_time = socket.gettime()
+
+local function run_next_queued_command()--{{{
+    if socket.gettime() < next_command_time then return end
+    local cmdinfo = cmdq[1]
+    if not cmdinfo then return end
+    table.remove(cmdq, 1)
+    local success, err = pcall(cmdinfo.func, cmdinfo.msg, cmdinfo.arg)
+    if not success then print(('***** error in "%s" plugin: %s'):format(cmdinfo.name, err)) end
+    next_command_time = socket.gettime() + cmdinfo.time
+    eventloop:timer(cmdinfo.time, run_next_queued_command)
+end--}}}
+
+local function process_prefixed_command(msg, line)--{{{
     local cmdname = line:match('^([^ ]+)')
     if not cmdname then return end
     cmdname = cmdname:lower()
@@ -79,17 +93,32 @@ local function process_prefixed_command(msg, line)
     for k, v in pairs(plugins) do
         if v.commands[cmdname] then
             found = true
-            local success, err = pcall(v.commands[cmdname][1], msg, line:sub(#cmdname+1))
-            if not success then print(('***** error in "%s" plugin: %s'):format(k, err)) end
+            if #cmdq < config.max_cmdq_size then
+                table.insert(cmdq, {
+                    name = k,
+                    func = v.commands[cmdname][1],
+                    msg = msg,
+                    arg = line:sub(#cmdname+1),
+                    time = v.commands[cmdname].mininterval or config.default_min_cmd_interval,
+                })
+                run_next_queued_command()
+            end
             break
         end
     end
-    if not found then
-        msg.client:sendprivmsg((irc.ischanname(msg.args[1]) and msg.args[1] or msg.sender.nick) or '', config.no_command_message:format(cmdname))
+    if #cmdq < config.max_cmdq_size and not found then
+        table.insert(cmdq, {
+            name = 'cmdnotfoundhandler',
+            func = function ()
+                msg.client:sendprivmsg((irc.ischanname(msg.args[1]) and msg.args[1] or msg.sender.nick) or '', config.no_command_message:format(cmdname))
+            end,
+            time = config.default_min_cmd_interval,
+        })
+        run_next_queued_command()
     end
-end
+end--}}}
 
-local function add_client(net, ident)
+local function add_client(net, ident)--{{{
     local client = irc.Client(eventloop, net, ident, config.netdefaults)
     local nickattempt, nickattemptstate
     local tbl = {
@@ -194,9 +223,9 @@ local function add_client(net, ident)
     clients[client] = tbl
     clientsbyname[tbl.name] = client
     client:connect()
-end
+end--}}}
 
-local function load_config()
+local function load_config()--{{{
     local success, newconfig = pcall(dofile, configfile)
     if config then
         if success then
@@ -209,6 +238,9 @@ local function load_config()
         assert(success, newconfig)
         config = newconfig
     end
+
+    config.default_min_cmd_interval = config.default_min_cmd_interval or 1.5
+    config.max_cmdq_size = config.max_cmdq_size or 20
 
     for name, ident in pairs(config.identities) do
         ident.name = name
@@ -258,9 +290,9 @@ local function load_config()
         end
     end
     for name in pairs(removed_plugins) do plugins[name] = nil end
-end
+end--}}}
 
-local function show_command_ref()
+local function show_command_ref()--{{{
     io.stdout:write [[
 ***** command reference *****
 h -- show this reference
@@ -272,9 +304,9 @@ to the first few characters of the network name, or "*" to send to all
 networks. "%" escape sequences can be used to send control characters
 ***** end of command reference *****
 ]]
-end
+end--}}}
 
-local stdin_commands = {
+local stdin_commands = {--{{{
     ['^%s*h%s*$'] = function () show_command_ref() end,
     ['^%s*q%s*$'] = function ()
         for name, tbl in pairs(clients) do
@@ -336,10 +368,10 @@ local stdin_commands = {
             end
         end
     end,
-}
+}--}}}
 
 local luasocket_stdin_kludge = {getfd = function () return 0 end}
-local function stdin_handler()
+local function stdin_handler()--{{{
     local line = io.stdin:read('*l')
     if line then
         for pattern, func in pairs(stdin_commands) do
@@ -351,7 +383,7 @@ local function stdin_handler()
         end
     end
     return true
-end
+end--}}}
 eventloop:add_readable_handler(luasocket_stdin_kludge, stdin_handler)
 
 show_command_ref()
