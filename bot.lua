@@ -243,6 +243,8 @@ local function load_config()
             if f then
                 local plugintbl = {}
                 local env = create_plugin_env(plugintbl, info[2])
+                local namedirpart = info[1]:match('.+/')
+                env.bot.plugindir = namedirpart and plugindir..'/'..namedirpart or plugindir
                 setfenv(f, env)
                 local success, err = pcall(f)
                 if success then
@@ -290,6 +292,8 @@ local stdin_commands = {
         if f then
             local plugintbl = {}
             local env = create_plugin_env(plugintbl, config.plugins[name][2])
+            local namedirpart = config.plugins[name][1]:match('.+/')
+            env.bot.plugindir = namedirpart and plugindir..'/'..namedirpart or plugindir
             setfenv(f, env)
             local success, err = pcall(f)
             if success then

@@ -1,0 +1,4 @@
+*** WARNING ***
+
+The sandbox process isn't 100% guaranteed to stop access to unsafe Lua functions, and it doesn't have anything preventing it from editing the filesystem. Security improvements might be added later.
+
