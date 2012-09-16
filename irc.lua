@@ -6,56 +6,56 @@ local ssl = nil
 -- By default this module only depends on LuaSocket, calling this function
 -- requires LuaSec. If you try to use SSL without calling this function first,
 -- an error will be thrown.
-local function enable_ssl()
+local function enable_ssl()--{{{
     ssl = require 'ssl'
-end
+end--}}}
 
 -- Convert a sender prefix string into a table.
 -- For example, "a!b@c" is converted to {nick='a', user='b', host='c',
 -- str='a!b@c'}. Non-'*!*@*' strings are converted like this: 'example' ->
 -- {nick=nil, user=nil, host='example', str='example'}.
-local function sender_prefix_to_table(str)
+local function sender_prefix_to_table(str)--{{{
     local nick, user, host = str:match('^(.+)!(.+)@(.+)$')
     if not nick then return {host = str, str = str} end
     return {nick = nick, user = user, host = host, str = str}
-end
+end--}}}
 
-local lowlevel_quote_table = {
+local lowlevel_quote_table = {--{{{
     ['\0'] = '\0160',
     ['\n'] = '\016n',
     ['\r'] = '\016r',
     ['\016'] = '\016\016'
-}
+}--}}}
 
 -- Quote a message string to prepare it for sending.
-local function lowlevel_quote(str)
+local function lowlevel_quote(str)--{{{
     return string.gsub(str, '[%z\n\r\016]', lowlevel_quote_table)
-end
+end--}}}
 
-local lowlevel_dequote_table = {
+local lowlevel_dequote_table = {--{{{
     ['\0160'] = '\0',
     ['\016n'] = '\n',
     ['\016r'] = '\r',
     ['\016\016'] = '\016'
-}
+}--}}}
 
 setmetatable(lowlevel_dequote_table,
              {__index = function (t, k) return k:sub(2, 2) end})
 
 -- Dequote a received message string.
-local function lowlevel_dequote(str)
+local function lowlevel_dequote(str)--{{{
     return string.gsub(str, '\016.', lowlevel_dequote_table)
-end
+end--}}}
 
 -- Quote any CTCP special chars in a string.
-local function ctcp_quote(str)
+local function ctcp_quote(str)--{{{
     return string.gsub(str, '[\001\\]', '\\%1')
-end
+end--}}}
 
 -- Dequote any CTCP special chars in a string.
-local function ctcp_dequote(str)
+local function ctcp_dequote(str)--{{{
     return string.gsub(str, '\\([\\\001])', '%1')
-end
+end--}}}
 
 -- Convert a message line into a table representation of it. The contents of
 -- the table are:
@@ -81,7 +81,7 @@ end
 --
 -- The mynick arg is to fill in the sender prefix if it's not in the line, and
 -- the client arg fills the client field of the table.
-local function message_line_to_table(line, mynick, client)
+local function message_line_to_table(line, mynick, client)--{{{
     local time = os.time()
     local prefix, remaining = line:match('^:([^ ]+) +(.*)')
     remaining = remaining or line
@@ -115,18 +115,19 @@ local function message_line_to_table(line, mynick, client)
         cmd = cmdtype,
         args = args,
     }
-end
+end--}}}
 
 -- Check whether a command is a numeric reply.
-local function isnumreply(cmd)
+local function isnumreply(cmd)--{{{
     return string.match(cmd, '%d%d%d')
-end
--- Check whether a command is a numeric error reply.
-local function iserrreply(cmd)
-    return string.match(cmd, '[45]%d%d')
-end
+end--}}}
 
-local rfc1459_upper, rfc1459_lower, strict_rfc1459_upper, strict_rfc1459_lower
+-- Check whether a command is a numeric error reply.
+local function iserrreply(cmd)--{{{
+    return string.match(cmd, '[45]%d%d')
+end--}}}
+
+local rfc1459_upper, rfc1459_lower, strict_rfc1459_upper, strict_rfc1459_lower--{{{
 do
     local rfc1459_upper_table = {['{']='[', ['|']='\\', ['}']=']', ['^']='~'}
     function rfc1459_upper(str)
@@ -147,56 +148,56 @@ do
     function strict_rfc1459_lower(str)
         return string.gsub(string.lower(str), '[%[\\%]]', strict_rfc1459_lower_table)
     end
-end
+end--}}}
 
-local function rfc1459_nameeq(a, b)
+local function rfc1459_nameeq(a, b)--{{{
     return a == b or rfc1459_lower(a) == rfc1459_lower(b)
-end
+end--}}}
 
-local function strict_rfc1459_nameeq(a, b)
+local function strict_rfc1459_nameeq(a, b)--{{{
     return a == b or strict_rfc1459_lower(a) == strict_rfc1459_lower(b)
-end
+end--}}}
 
-local function ascii_nameeq(a, b)
+local function ascii_nameeq(a, b)--{{{
     return a == b or string.lower(a) == string.lower(b)
-end
+end--}}}
 
-local rfc1459_name_key_metatable = {
+local rfc1459_name_key_metatable = {--{{{
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and rfc1459_lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and rfc1459_lower(key) or key, val)
     end,
-}
+}--}}}
 
-local strict_rfc1459_name_key_metatable = {
+local strict_rfc1459_name_key_metatable = {--{{{
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key, val)
     end,
-}
+}--}}}
 
-local ascii_name_key_metatable = {
+local ascii_name_key_metatable = {--{{{
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and string.lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and string.lower(key) or key, val)
     end,
-}
+}--}}}
 
 -- See if a string is a valid channel name.
-local function ischanname(str)
+local function ischanname(str)--{{{
     return str:match('^[&#+!][^%z\007\r\n ,:]+$')
-end
+end--}}}
 
 -- See if a string is a valid nick.
-local function isnick(str)
+local function isnick(str)--{{{
     return str:match('^%a[%a%d[%]\\`_^{|}-]*$')
-end
+end--}}}
 
 -- Apply a mode string to another.
 -- If the diff doesn't start with a '+' or '-', '+' is assumed.  The chars in
@@ -206,7 +207,7 @@ end
 -- applymode('+abc', '+bd') --> '+abcd'
 -- applymode('+abc', '-bd') --> '+ac'
 -- applymode('bca', 'd') --> '+abcd'
-local function applymode(str, diff)
+local function applymode(str, diff)--{{{
     local negative = false
     if #diff > 0 then
         local match
@@ -235,15 +236,15 @@ local function applymode(str, diff)
     for i in str:gmatch('.') do chars[#chars+1] = i end
     table.sort(chars)
     return prefix..table.concat(chars)
-end
+end--}}}
 
 -- Manage a connection to an IRC network.
-local Client = {}
+local Client = {}--{{{
 Client.__index = Client
 setmetatable(Client, {__call = function (t, ...) return Client.new(...) end})
 
 -- default settings. You can override these in the "netinfo" table passed to the Client constructor
-local default_defaults = {
+local default_defaults = {--{{{
     conn_timeout = 60,                   -- the amount of time to wait for the socket to connect before autoreconnecting
     ssl_handshake_timeout = 30,          -- the amount of time to wait for the SSL handshake to complete before autoreconnecting
     registering_timeout = 120,           -- the amount of time to wait for the 001 (RPL_WELCOME) reply before autoreconnecting
@@ -265,7 +266,7 @@ local default_defaults = {
     send_names_on_join = false,          -- send a NAMES command on joining a channel (most servers send a NAMES reply automatically)
     send_mode_on_join = true,            -- send a MODE command when joining a channel (some servers don't send a channel mode reply automatically)
     send_topic_on_join = false,          -- send a TOPIC command when joining a channel (some servers don't send a channel topic reply automatically)
-}
+}--}}}
 
 -- create a new Client
 -- eventloop: the event loop.
@@ -286,7 +287,7 @@ local default_defaults = {
 -- mode: Your current mode.
 -- prefixes: The set of nick prefixes the server supports. The keys hold the prefix and the values hold the mode character.
 -- ping: The time it took for the last ping to be replied to.
-function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)
+function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)--{{{
     local self = {}
     setmetatable(self, Client)
     self.state = 'disconnected'
@@ -313,9 +314,10 @@ function Client.new(eventloop, netinfo, identinfo, defaults, chantracker)
     function self:lower(str) return rfc1459_lower(str) end
     function self:nameeq(a, b) return rfc1459_nameeq(a, b) end
     return self
-end
+end--}}}
 
-function Client:name_key_metatable()
+-- Create a metatable that makes keys lowercase
+function Client:name_key_metatable()--{{{
     return {
         __index = function (tbl, key)
             return rawget(tbl, type(key)=='string' and self:lower(key) or key)
@@ -324,56 +326,56 @@ function Client:name_key_metatable()
             rawset(tbl, type(key)=='string' and self:lower(key) or key, val)
         end,
     }
-end
+end--}}}
 
 -- Change your nick. Unlike sending a NICK command, this also works if the
 -- Client is not connected. If the Client is registering, the change doesn't
 -- work immediately, the nick will only really be cahnged once the client
 -- enters the connected state.
-function Client:set_nick(nick)
+function Client:set_nick(nick)--{{{
     if self.state == 'connected' or self.state == 'registering' then
         self:sendmessage('NICK', nick)
     elseif isnick(nick) then
         self._nick = nick
         self:_trigger_event_handlers('nick-changed', self._nick)
     end
-end
+end--}}}
 
 -- Get your current nick.
-function Client:get_nick()
+function Client:get_nick()--{{{
     return self._nick
-end
+end--}}}
 
 -- Send a PRIVMSG. Unlike manually sending a PRIVMSG, this quotes any CTCP
 -- special characters.
-function Client:sendprivmsg(to, text)
+function Client:sendprivmsg(to, text)--{{{
     self:sendmessage('PRIVMSG', to, text)
     self:_trigger_event_handlers('sentprivmsg', to, text, os.time())
-end
+end--}}}
 
 -- Send a NOTICE. Unlike manually sending a NOTICE, this quotes any CTCP
 -- special characters.
-function Client:sendnotice(to, text)
+function Client:sendnotice(to, text)--{{{
     self:sendmessage('NOTICE', to, text)
     self:_trigger_event_handlers('sentnotice', to, text, os.time())
-end
+end--}}}
 
 -- Send a CTCP.
-function Client:sendctcp(to, cmd, arg)
+function Client:sendctcp(to, cmd, arg)--{{{
     self:sendmessage('PRIVMSG', to, '\001'..ctcp_quote(cmd..(arg and ' '..arg or ''))..'\001')
     self:_trigger_event_handlers('sentctcp', to, cmd, arg, os.time())
-end
+end--}}}
 
 -- Send a CTCP reply.
-function Client:sendctcpreply(to, cmd, arg)
+function Client:sendctcpreply(to, cmd, arg)--{{{
     self:sendmessage('NOTICE', to, '\001'..ctcp_quote(cmd..(arg and ' '..arg or ''))..'\001')
     self:_trigger_event_handlers('sentctcpreply', to, cmd, arg, os.time())
-end
+end--}}}
 
 -- Send a message.
 --  Except for the last one, the args may not contain whitespace or start with
 --  a ":" character.
-function Client:sendmessage(cmd, ...)
+function Client:sendmessage(cmd, ...)--{{{
     assert(self.state == 'connected' or self.state == 'registering',
            'irc.Client.sendmessage can only be caled in the "connected" and "registering" states')
     local line, argcount = cmd, select('#', ...)
@@ -384,25 +386,26 @@ function Client:sendmessage(cmd, ...)
     end
     self:_trigger_event_handlers('sentmessage', line, os.time())
     self:_send(lowlevel_quote(line)..'\r\n')
-end
+end--}}}
 
 -- Send a pre-formatted message line. In most cases, you should use
 -- Client:sendmessage instead.
-function Client:sendmessageline(line)
+function Client:sendmessageline(line)--{{{
     assert(self.state == 'connected' or self.state == 'registering',
            'irc.Client.sendmessage can only be caled in the "connected" and "registering" states')
     self:_trigger_event_handlers('sentmessage', line, os.time())
     self:_send(lowlevel_quote(line)..'\r\n')
-end
+end--}}}
 
-function Client:getmodeprefix(mode)
+-- Get the prefix for a mode letter
+function Client:getmodeprefix(mode)--{{{
     for _, pair in ipairs(self.isupport.prefixes) do
         if mode:find(pair[2], 1, true) then
             return pair[1]
         end
     end
     return nil
-end
+end--}}}
 
 -- Add an event handler. This is the list of possible events:
 --
@@ -419,17 +422,19 @@ end
 --
 -- Note that all events have an arg that contains the Client before the rest of
 -- the args.
-function Client:add_event_handler(event, cb)
+function Client:add_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = true
-end
-function Client:remove_event_handler(event, cb)
+end--}}}
+
+function Client:remove_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = nil
-end
-Client.add_callback = Client.add_event_handler
-Client.remove_callback = Client.remove_event_handler
+end--}}}
+
+Client.add_event_handler = Client.add_callback
+Client.remove_event_handler = Client.remove_callback
 
 -- (private) clean up the current connection and reconnect after an interval
-function Client:_reconnect(reason)
+function Client:_reconnect(reason)--{{{
     self._timer:cancel()
     self._eventloop:remove_readable_handler(self._conn, self._rhandler)
     self._eventloop:remove_writable_handler(self._conn, self._whandler)
@@ -457,11 +462,11 @@ function Client:_reconnect(reason)
     self.state = 'reconnecting'
     self:_trigger_event_handlers('statechanged', self.state, reason, self._reconnecttime)
     self._timer = self._eventloop:timer(self._reconnecttime, function () self:connect() end)
-end
+end--}}}
 
 -- Connect to the network.
 -- If in the reconnecting state, connect now.
-function Client:connect()
+function Client:connect()--{{{
     assert(self.state == 'disconnected' or self.state == 'reconnecting')
     self._intentionally_quit = false
     if self._timer then self._timer:cancel() end
@@ -475,11 +480,11 @@ function Client:connect()
     self.state = 'connecting'
     self:_trigger_event_handlers('statechanged', self.state)
     self._timer = self._eventloop:timer(self.netinfo.conn_timeout or self.defaults.conn_timeout, function () self:_reconnect('connectingtimeout') end)
-end
+end--}}}
 
 -- Disconnect.
 -- If in the reconnecting state, cancel reconnection.
-function Client:disconnect(msg)
+function Client:disconnect(msg)--{{{
     if self.state == 'disconnected' then return end
     if self.state == 'reconnecting' then
         self._timer:cancel()
@@ -503,10 +508,10 @@ function Client:disconnect(msg)
         self.state = 'disconnected'
         self:_trigger_event_handlers('statechanged', self.state)
     end
-end
+end--}}}
 
 -- (private) call when the socket is connected (first r/w event)
-function Client:_on_socket_connected()
+function Client:_on_socket_connected()--{{{
     self._timer:cancel()
     if self.netinfo.ssl then
         self._eventloop:remove_readable_handler(self._conn, self._rhandler)
@@ -522,10 +527,10 @@ function Client:_on_socket_connected()
     else
         self:_on_ssl_handshake_done()
     end
-end
+end--}}}
 
 -- (private) resume the SSL handshake
-function Client:_do_ssl_handshake()
+function Client:_do_ssl_handshake()--{{{
     local success, errmsg = self._conn:dohandshake()
     if success then 
         self:_on_ssl_handshake_done()
@@ -538,11 +543,11 @@ function Client:_do_ssl_handshake()
     else
         self:_reconnect('sslerror '..errmsg)
     end
-end
+end--}}}
 
 -- (private) call when the SSL handshake is done (or on connection, if SSL is
 -- not used)
-function Client:_on_ssl_handshake_done()
+function Client:_on_ssl_handshake_done()--{{{
     self._timer:cancel()
     self._recvbuf = ''
     self._sendbuf = ''
@@ -572,18 +577,18 @@ function Client:_on_ssl_handshake_done()
     self:sendmessage('USER', self.identinfo.username, tostring(modemask), '*', self.identinfo.realname)
     self:sendmessage('NICK', self._nick)
     self._timer = self._eventloop:timer(self.netinfo.registering_timeout or self.defaults.registering_timeout, function () self:_reconnect('registeringtimeout') end)
-end
+end--}}}
 
 -- Ping the server.
-function Client:ping()
+function Client:ping()--{{{
     self._timer:cancel()
     self._pingtime = socket.gettime()
     self:sendmessage('PING', tostring(self._pingtime))
     self._timer = self._eventloop:timer(self.netinfo.ping_timeout or self.defaults.ping_timeout, function () self:_reconnect('pingtimeout') end)
-end
+end--}}}
 
 -- (private) socket readable callback
-function Client:_on_readable()
+function Client:_on_readable()--{{{
     if self.state == 'connecting' then
         self:_on_socket_connected()
     elseif self.state == 'sslhandshake' then
@@ -737,10 +742,10 @@ function Client:_on_readable()
         end
     end
     return true
-end
+end--}}}
 
 -- (private) socket writable callback
-function Client:_on_writable()
+function Client:_on_writable()--{{{
     if self.state == 'connecting' then
         self:_on_socket_connected()
     elseif self.state == 'sslhandshake' then
@@ -759,10 +764,10 @@ function Client:_on_writable()
         end
     end
     return false
-end
+end--}}}
 
 -- (private) send data from the socket, buffering it if needed
-function Client:_send(str)
+function Client:_send(str)--{{{
     if #self._sendbuf == 0 then
         local success, err, bytessent = self._conn:send(str)
         if err == 'timeout' then
@@ -775,17 +780,18 @@ function Client:_send(str)
         self._sendbuf = self._sendbuf..str
         self._eventloop:add_writable_handler(self._conn, self._whandler)
     end
-end
+end--}}}
 
 -- (private) trigger an event handler
-function Client:_trigger_event_handlers(event, ...)
+function Client:_trigger_event_handlers(event, ...)--{{{
     for cb in pairs(self._eventhandlers[event]) do
         local success, errmsg = pcall(cb, self, ...)
         if not success then
             io.stderr:write(('error in irc.Client "%s" event handler: %s\n'):format(event, tostring(errmsg)))
         end
     end
-end
+end--}}}
+--}}}
 
 -- Keep track of the channels a Client is in, and their members.
 -- Contains a field called 'chanstates', which is a table organized like this:
@@ -808,11 +814,12 @@ end
 --         },
 --     },
 -- }
-local ChannelTracker = {}
+
+local ChannelTracker = {}--{{{
 ChannelTracker.__index = ChannelTracker
 setmetatable(ChannelTracker, {__call = function (t, ...) return ChannelTracker.new(...) end})
 
-function ChannelTracker.new(client)
+function ChannelTracker.new(client)--{{{
     local self = {}
     setmetatable(self, ChannelTracker)
     self._client = client
@@ -862,36 +869,37 @@ function ChannelTracker.new(client)
     client:add_event_handler('receivedmessage_pre', self._msghandler)
     client:add_event_handler('statechanged', self._statehandler)
     return self
-end
+end--}}}
 
-function ChannelTracker:_trigger_event_handlers(event, ...)
+function ChannelTracker:_trigger_event_handlers(event, ...)--{{{
     for cb in pairs(self._eventhandlers[event]) do
         local success, errmsg = pcall(cb, self, ...)
         if not success then
             io.stderr:write(('error in irc.Client "%s" event handler: %s\n'):format(event, tostring(errmsg)))
         end
     end
-end
+end--}}}
 
-function ChannelTracker:add_event_handler(event, cb)
+function ChannelTracker:add_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = true
-end
-ChannelTracker.add_callback = ChannelTracker.add_event_handler
+end--}}}
 
-function ChannelTracker:remove_event_handler(event, cb)
+function ChannelTracker:remove_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = nil
-end
-ChannelTracker.remove_callback = ChannelTracker.remove_event_handler
+end--}}}
 
-function ChannelTracker:_remove_from_unknownprefixes(nick)
+ChannelTracker.add_event_handler = ChannelTracker.add_callback
+ChannelTracker.remove_event_handler = ChannelTracker.remove_callback
+
+function ChannelTracker:_remove_from_unknownprefixes(nick)--{{{
     for _, chan in pairs(self.chanstates) do
         if chan.members[nick] then return end
     end
     self._unknownprefixes[nick] = nil
-end
+end--}}}
 
-ChannelTracker._msghandlers = {
-    ['JOIN'] = function (self, msg)
+ChannelTracker._msghandlers = {--{{{
+    ['JOIN'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and ischanname(msg.args[1]) and msg.sender and msg.sender.nick) then return end
         if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = {
@@ -916,8 +924,8 @@ ChannelTracker._msghandlers = {
                 self:_trigger_event_handlers('memberadded', msg.args[1], msg.sender.nick, 'JOIN')
             end
         end
-    end,
-    ['PART'] = function (self, msg)
+    end,--}}}
+    ['PART'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
         if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = self.chanstates[msg.args[1]]
@@ -938,8 +946,8 @@ ChannelTracker._msghandlers = {
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.sender.nick, 'PART')
             end
         end
-    end,
-    ['KICK'] = function (self, msg)
+    end,--}}}
+    ['KICK'] = function (self, msg)--{{{
         if not (#msg.args >= 2) then return end
         if self._client:nameeq(self._client:get_nick(), msg.args[2]) then
             local chan = self.chanstates[msg.args[1]]
@@ -960,8 +968,8 @@ ChannelTracker._msghandlers = {
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.args[2], 'KICK')
             end
         end
-    end,
-    ['QUIT'] = function (self, msg)
+    end,--}}}
+    ['QUIT'] = function (self, msg)--{{{
         if not (msg.sender and msg.sender.nick) then return end
         self._unknownprefixes[msg.sender.nick] = nil
         if not self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
@@ -972,8 +980,8 @@ ChannelTracker._msghandlers = {
                 end
             end
         end
-    end,
-    ['NICK'] = function (self, msg)
+    end,--}}}
+    ['NICK'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
         for channame, chan in pairs(self.chanstates) do
             if chan.members[msg.sender.nick] then
@@ -982,16 +990,16 @@ ChannelTracker._msghandlers = {
                 self:_trigger_event_handlers('membernick', channame, msg.sender.nick, msg.args[1])
             end
         end
-    end,
-    ['TOPIC'] = function (self, msg)
+    end,--}}}
+    ['TOPIC'] = function (self, msg)--{{{
         if not (#msg.args >= 2) then return end
         local chan = self.chanstates[msg.args[1]]
         if chan then
             chan.topic = msg.args[2]
             self:_trigger_event_handlers('channeltopic', msg.args[1], chan.topic, true)
         end
-    end,
-    ['MODE'] = function (self, msg)
+    end,--}}}
+    ['MODE'] = function (self, msg)--{{{
         if not (#msg.args >= 2) then return end
         local chan = self.chanstates[msg.args[1]]
         if chan then
@@ -1036,8 +1044,8 @@ ChannelTracker._msghandlers = {
                 argnum = argnum + 1
             end
         end
-    end,
-    ['353'] = function (self, msg) -- RPL_NAMREPLY
+    end,--}}}
+    ['353'] = function (self, msg) -- RPL_NAMREPLY--{{{
         if not (#msg.args >= 4) then return end
         local chan = self.chanstates[msg.args[3]]
         if chan then
@@ -1058,30 +1066,31 @@ ChannelTracker._msghandlers = {
                 end
             end
         end
-    end,
-    ['324'] = function (self, msg) -- RPL_CHANNELMODEIS
+    end,--}}}
+    ['324'] = function (self, msg) -- RPL_CHANNELMODEIS--{{{
         if not (#msg.args >= 3) then return end
         local chan = self.chanstates[msg.args[2]]
         if chan then
             chan.mode = msg.args[3]
             self:_trigger_event_handlers('channelmode', msg.args[2], chan.mode, false)
         end
-    end,
-    ['332'] = function (self, msg) -- RPL_TOPIC
+    end,--}}}
+    ['332'] = function (self, msg) -- RPL_TOPIC--{{{
         if not (#msg.args >= 3) then return end
         local chan = self.chanstates[msg.args[2]]
         if chan then
             chan.topic = msg.args[3]
             self:_trigger_event_handlers('channeltopic', msg.args[2], chan.topic, false)
         end
-    end,
-}
+    end,--}}}
+}--}}}
+--}}}
 
-local AutoJoiner = {}
+local AutoJoiner = {}--{{{
 AutoJoiner.__index = AutoJoiner
 setmetatable(AutoJoiner, {__call = function (t, ...) return AutoJoiner.new(...) end})
 
-function AutoJoiner.new(client)
+function AutoJoiner.new(client)--{{{
     local self = {}
     setmetatable(self, AutoJoiner)
     self._client = client
@@ -1162,15 +1171,15 @@ function AutoJoiner.new(client)
     client:add_event_handler('statechanged', self._on_statechanged)
 
     return self
-end
+end--}}}
 
 function AutoJoiner:addchannel(chan)
     self.rejoining_channels[chan] = {}
     self._client:sendmessage('JOIN', chan)
-end
+end--}}}
 
 -- stuff available to users of this module
-return {
+return {--{{{
     enable_ssl = enable_ssl,
     sender_prefix_to_table = sender_prefix_to_table,
     message_line_to_table = message_line_to_table,
@@ -1192,5 +1201,5 @@ return {
     Client = Client,
     ChannelTracker = ChannelTracker,
     AutoJoiner = AutoJoiner,
-}
+}--}}}
 
