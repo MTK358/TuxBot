@@ -68,7 +68,7 @@ return {
         },]]
     },
 
-    command_prefixes = {'!', '[Tt][Uu][Xx][Bb][Oo][Tt] *[:,] *'},
+    command_prefixes = {'@@'},
     no_command_message = '"%s": no such command',
 
     plugins = {
@@ -91,6 +91,12 @@ return {
             responses = dofile('config-responses.lua')},
         },
         ['luaapi'] = {'luaapi.lua'},
+	['nickregain'] = {'nickregain.lua', {
+	    execafter = {
+	        "PRIVMSG NickServ :identify PassW0rd",
+	        "PRIVMSG BotOwner :someone used @@regain on this network",
+            },  
+        }},
         ['time'] = {'time.lua'},
         ['commands'] = {'commands.lua'},
         ['help'] = {'help.lua', {
