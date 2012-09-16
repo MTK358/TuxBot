@@ -1053,6 +1053,8 @@ ChannelTracker._msghandlers = {
                     chan.members[nick] = {mode = mode, prefix = {nick=nick}}
                     self:_trigger_event_handlers('memberadded', msg.args[3], nick, 'NAMES')
                     self._unknownprefixes[nick] = true
+                elseif chan.members[nick] then
+                    chan.members[nick].mode = mode
                 end
             end
         end
