@@ -68,7 +68,7 @@ return {
         },]]
     },
 
-    command_prefixes = {'@@'},
+    command_prefixes = {'!', '[Tt][Uu][Xx][Bb][Oo][Tt] *[:,] *'},
     no_command_message = '"%s": no such command',
 
     plugins = {
