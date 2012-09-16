@@ -998,7 +998,7 @@ ChannelTracker._msghandlers = {
             local argnum = 2
             while argnum <= #msg.args do -- because a for loop doesn't let you modify the number in the body of the loop
                 local positive = true
-                for char in msg.args[argnum]:gsub('.') do
+                for char in msg.args[argnum]:gmatch('.') do
                     if char == '+' then
                         positive = true
                     elseif char == '-' then
@@ -1136,7 +1136,7 @@ function AutoJoiner.new(client)
                 msg.cmd == '474' or
                 msg.cmd == '437') and #msg.args >= 2 and self.rejoining_channels[msg.args[2]] then
             self.on_channels[msg.args[1]] = nil
-            local rejoininfo = self.rejoining_channels[msg.args[1]]
+            local rejoininfo = self.rejoining_channels[msg.args[1]] or {}
             if rejoininfo._timer then rejoininfo._timer:cancel() end
             if rejoininfo._interval then
                 rejoininfo._interval = rejoininfo._interval * self._netinfo.rejoin_interval_scale or self._defaults.rejoin_interval_scale
