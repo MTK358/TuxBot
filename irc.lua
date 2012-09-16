@@ -800,7 +800,10 @@ end--}}}
 --     ['#example'] = {
 --         name = '#Example', -- the real name of the channel, since name_key_metatable makes keys lowercase
 --         topic = 'This is an example', -- may be nil if unknown
---         mode = '+nt', -- may be nil if unknown
+--         mode = '+ntl', -- may be nil if unknown
+--         modeparams = { -- mode parameters
+--             ['l'] = '10',
+--         },
 --         members = { -- has name_key_metatable
 --             ['someone'] = {
 --                 mode = '+v',
@@ -905,7 +908,8 @@ ChannelTracker._msghandlers = {--{{{
             local chan = {
                 name = msg.args[1],
                 members = {},
-                mode = '+',
+                modeparams = {},
+                -- mode = nil
             }
             setmetatable(chan.members, msg.client:name_key_metatable())
             chan.members[self._client:get_nick()] = {prefix={nick=self._client:get_nick()}, mode='+'}
@@ -1012,15 +1016,15 @@ ChannelTracker._msghandlers = {--{{{
                     elseif char == '-' then
                         positive = false
                     elseif char:match('%w') then
-                        local hasparam, ismembermode = false, false
+                        local hasparam, ismembermode, modetype = false, false, 'd'
                         if self._client.isupport.prefixesformode[char] then
-                            hasparam, ismembermode = 'nick', true
+                            hasparam, ismembermode, modetype = 'nick', true, 'a'
                         elseif self._client.isupport.chanmodes.a:find(char, 1, true) then
-                            hasparam, ismembermode = 'nick', true
+                            hasparam, ismembermode, modetype = 'nick', true, 'a'
                         elseif self._client.isupport.chanmodes.b:find(char, 1, true) then
-                            hasparam = true
+                            hasparam, modetype = true, 'b'
                         elseif self._client.isupport.chanmodes.c:find(char, 1, true) then
-                            hasparam = positive
+                            hasparam, modetype = positive, 'c'
                         end
                         if hasparam then
                             argnum = argnum + 1
@@ -1036,7 +1040,10 @@ ChannelTracker._msghandlers = {--{{{
                             end
                         end
                         if (not ismembermode) and hasparam ~= 'nick' then
-                            chan.mode = applymode(chan.mode, (positive and '+' or '-')..char)
+                            chan.mode = applymode(chan.mode or '+', (positive and '+' or '-')..char)
+                            if modetype == 'c' then
+                                chan.modeparams[char] = positive and msg.args[argnum] or nil
+                            end
                             self:_trigger_event_handlers('channelmode', chan.name, chan.mode, true)
                         end
                     end
