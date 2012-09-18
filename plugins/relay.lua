@@ -1,5 +1,15 @@
 
+local infocolor = config.infocolor or '\029'
+
 local issendingrelay = false
+
+local relaymsgs = {}
+
+local function clear_relaymsgs()--{{{
+    if next(relaymsgs) then relaymsgs = {} end
+    bot.eventloop:timer(15, clear_relaymsgs)
+end--}}}
+bot.eventloop:timer(15, clear_relaymsgs)
 
 local function nickhash(nick)--{{{
     local num = 0
@@ -34,6 +44,22 @@ local function relay(text, info, how)--{{{
             issendingrelay = false
         end
     end
+    local client = bot.clientsbyname[info.origin[1]]
+    relaymsgs[{client, client:lower(info.origin[2]), text}] = true
+end--}}}
+
+local function feedbackcheck(msg, net, chan, text)--{{{
+    for sent in pairs(relaymsgs) do
+        if sent[1] == msg.client and sent[2] == msg.client:lower(chan) then
+            if text:match(sent[3]:gsub('[^%w_]', '%%%1')) then
+                if bot.plugins.tmpban then
+                    bot.plugins.tmpban.env.tmpban(msg.client, chan, msg.sender.nick, 60, 'Relay feedback loop')
+                else
+                    msg.client:sendmessage('KICK', chan, msg.sender.nick, 'Relay feedback loop')
+                end
+            end
+        end
+    end
 end--}}}
 
 local active_members = {}
@@ -59,6 +85,7 @@ local msg_handlers = {--{{{
                                                     config.nickfmts.endfmt,
                                                     msg.args[2])
             relay(text, relayinfo)
+            feedbackcheck(msg, relayinfo.origin[1], relayinfo.origin[2], msg.args[2])
         end
     end,--}}}
     ['NOTICE'] = function (msg)--{{{
@@ -74,6 +101,7 @@ local msg_handlers = {--{{{
                                                     config.nickfmts.endfmt,
                                                     msg.args[2])
             relay(text, relayinfo)
+            feedbackcheck(msg, relayinfo.origin[1], relayinfo.origin[2], msg.args[2])
         end
     end,--}}}
     [':CTCP'] = function (msg)--{{{
@@ -89,12 +117,13 @@ local msg_handlers = {--{{{
                                                     config.nickfmts.endfmt,
                                                     msg.args[3])
             relay(text, relayinfo)
+            feedbackcheck(msg, relayinfo.origin[1], relayinfo.origin[2], msg.args[3])
         end
     end,--}}}
     ['KICK'] = function (msg)--{{{
         local relayinfo = isrelayed(msg)
         if relayinfo then
-            local text = ('\0036* \002%s\002 has kicked \002%s\002 on \002%s@%s\002'):format(msg.sender.nick, msg.args[2], relayinfo.origin[2], relayinfo.origin[1])
+            local text = (infocolor..'* %s has kicked %s on %s@%s'):format(msg.sender.nick, msg.args[2], relayinfo.origin[2], relayinfo.origin[1])
             if msg.args[3] then text = ('%s (%s)'):format(text, msg.args[3]) end
             text = text..'\015'
             relay(text, relayinfo)
@@ -103,14 +132,14 @@ local msg_handlers = {--{{{
     ['TOPIC'] = function (msg)--{{{
         local relayinfo = isrelayed(msg)
         if relayinfo then
-            local text = ('\0036* \002%s\002 has changed the topic of \002%s@%s\002 to:\015 %s'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1], msg.args[2])
+            local text = (infocolor..'* %s has changed the topic of %s@%s to:\015 %s'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1], msg.args[2])
             relay(text, relayinfo)
         end
     end,--}}}
     --[[['MODE'] = function (msg)--{{{
         local relayinfo = isrelayed(msg)
         if relayinfo then
-            local text = ('\0036* \002%s\002 has set mode [\002%s\002] on \002%s@%s\002\015'):format(msg.sender.nick, table.concat(msg.args, ' ', 2), relayinfo.origin[2], relayinfo.origin[1])
+            local text = (infocolor..'* %s has set mode [%s] on %s@%s\015'):format(msg.sender.nick, table.concat(msg.args, ' ', 2), relayinfo.origin[2], relayinfo.origin[1])
             relay(text, relayinfo)
         end
     end,]]--}}}
@@ -120,7 +149,7 @@ local msg_handlers = {--{{{
         if timer then
             local relayinfo = isrelayed(msg)
             if relayinfo then
-                local text = ('\0036* \002%s\002 has joined \002%s@%s\002'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1])
+                local text = (infocolor..'* %s has joined %s@%s'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1])
                 relay(text, relayinfo)
             end
         end
@@ -131,7 +160,7 @@ local msg_handlers = {--{{{
         if timer then
             local relayinfo = isrelayed(msg)
             if relayinfo then
-                local text = ('\0036* \002%s\002 has left \002%s@%s\002'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1])
+                local text = (infocolor..'* %s has left %s@%s'):format(msg.sender.nick, relayinfo.origin[2], relayinfo.origin[1])
                 if msg.args[2] then text = ('%s (%s)'):format(text, msg.args[2]) end
                 relay(text, relayinfo)
             end
@@ -144,7 +173,25 @@ local msg_handlers = {--{{{
             if timer then
                 local relayinfo = isrelayed(msg, chanstate.name)
                 if relayinfo then
-                    local text = ('\0036* \002%s\002 has quit on \002%s\002'):format(msg.sender.nick, relayinfo.origin[1])
+                    local text = (infocolor..'* %s has quit on %s'):format(msg.sender.nick, relayinfo.origin[1])
+                    if msg.args[1] then text = ('%s (%s)'):format(text, msg.args[1]) end
+                    relay(text, relayinfo)
+                end
+            end
+        end
+    end,--}}}
+    ['NICK'] = function (msg)--{{{
+        for _, chanstate in pairs(bot.clients[msg.client].tracker.chanstates) do
+            local active_members_key = ('%s %s %s'):format(msg.client:lower(msg.sender.nick), msg.client:lower(chanstate.name), bot.clients[msg.client].name)
+            local timer = active_members[active_members_key]
+            if not timer then
+                active_members_key = ('%s %s %s'):format(msg.client:lower(msg.args[1]), msg.client:lower(chanstate.name), bot.clients[msg.client].name)
+                timer = active_members[active_members_key]
+            end
+            if timer then
+                local relayinfo = isrelayed(msg, chanstate.name)
+                if relayinfo then
+                    local text = (infocolor..'* %s is now known as %s on %s'):format(msg.sender.nick, msg.args[1], relayinfo.origin[1])
                     if msg.args[1] then text = ('%s (%s)'):format(text, msg.args[1]) end
                     relay(text, relayinfo)
                 end
@@ -154,21 +201,21 @@ local msg_handlers = {--{{{
     ['331'] = function (msg)--{{{
         local relayinfo = isrelayed(msg, msg.args[2])
         if relayinfo then
-            local text = ('\0036* \002%s@%s\002 has no topic.'):format(relayinfo.origin[2], relayinfo.origin[1])
+            local text = (infocolor..'* %s@%s has no topic.'):format(relayinfo.origin[2], relayinfo.origin[1])
             relay(text, relayinfo)
         end
     end,--}}}
     ['332'] = function (msg)--{{{
         local relayinfo = isrelayed(msg, msg.args[2])
         if relayinfo then
-            local text = ('\0036* The topic of \002%s@%s\002 is:\015 %s'):format(relayinfo.origin[2], relayinfo.origin[1], msg.args[2])
+            local text = (infocolor..'* The topic of %s@%s is:\015 %s'):format(relayinfo.origin[2], relayinfo.origin[1], msg.args[2])
             relay(text, relayinfo)
         end
     end,--}}}
     ['324'] = function (msg)--{{{
         local relayinfo = isrelayed(msg, msg.args[2])
         if relayinfo then
-            local text = ('\0036* The mode of \002%s@%s\002 is %s'):format(relayinfo.origin[2], relayinfo.origin[1], msg.args[3])
+            local text = (infocolor..'* The mode of %s@%s is %s'):format(relayinfo.origin[2], relayinfo.origin[1], msg.args[3])
             relay(text, relayinfo)
         end
     end,--}}}
@@ -237,9 +284,7 @@ local function parse_channel_name(msg, str)--{{{
     if not group then return end
     if netstr then
         for _, chan in ipairs(group) do
-            print('qweqw', chan[1]:lower(), netstr:lower(), chan[2], chanstr)
             if chan[1]:lower() == netstr:lower() and msg.client:nameeq(chan[2], chanstr) then
-                print'aew'
                 return bot.clientsbyname[chan[1]], chan[2]
             end
         end
