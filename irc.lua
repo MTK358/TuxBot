@@ -1118,7 +1118,7 @@ function AutoJoiner.new(client)--{{{
     self._on_statechanged = function (client, state)
         if state == 'connected' then
             for k, v in pairs(self.rejoining_channels) do
-                self._client:sendmessage('JOIN', k)
+                self._client:sendmessage('JOIN', k) -- FIXME client might not have correct CASEMAPPING settings yet
             end
             client:add_event_handler('receivedmessage_pre', self._on_message)
         elseif state == 'disconnected' or state == 'reconnecting' then
@@ -1157,13 +1157,13 @@ function AutoJoiner.new(client)--{{{
             local rejoininfo = self.rejoining_channels[msg.args[1]] or {}
             if rejoininfo._timer then rejoininfo._timer:cancel() end
             if rejoininfo._interval then
-                rejoininfo._interval = rejoininfo._interval * self._netinfo.rejoin_interval_scale or self._defaults.rejoin_interval_scale
+                rejoininfo._interval = rejoininfo._interval * (self._netinfo.rejoin_interval_scale or self._defaults.rejoin_interval_scale)
                 local max = self._netinfo.max_rejoin_interval or self._defaults.max_rejoin_interval
                 if rejoininfo._interval > max then rejoininfo._interval = max end
             else
                 rejoininfo._interval = self._netinfo.initial_rejoin_interval or self._defaults.initial_rejoin_interval
             end
-            rejoininfo._timer = self._client.eventloop:timer(rejoininfo._interval, function () timer_cb(msg.args[1]) end)
+            rejoininfo._timer = self._client.eventloop:timer(rejoininfo._interval, function () timer_cb(msg.args[2]) end)
             self.rejoining_channels[msg.args[1]] = rejoininfo
         elseif (msg.cmd == '403' or
                 msg.cmd == '475' or
