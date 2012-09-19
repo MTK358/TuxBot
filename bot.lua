@@ -90,18 +90,16 @@ local function send_event_to_plugins(event, ...)--{{{
     end
 end--}}}
 
-local cmdq = {}
-local next_command_time = socket.gettime()
-
-local function run_next_queued_command()--{{{
-    if socket.gettime() < next_command_time then return end
-    local cmdinfo = cmdq[1]
+local function run_next_queued_command(client)--{{{
+    if not clients[client] then return end -- the client was removed
+    if socket.gettime() < clients[client].cmdq.next_cmd_time then return end
+    local cmdinfo = clients[client].cmdq[1]
     if not cmdinfo then return end
-    table.remove(cmdq, 1)
+    table.remove(clients[client].cmdq, 1)
     local success, err = pcall(cmdinfo.func, cmdinfo.msg, cmdinfo.arg)
     if not success then print(('***** error in "%s" plugin: %s'):format(cmdinfo.name, err)) end
-    next_command_time = socket.gettime() + cmdinfo.time
-    eventloop:timer(cmdinfo.time, run_next_queued_command)
+    clients[client].cmdq.next_cmd_time = socket.gettime() + cmdinfo.mininterval
+    eventloop:timer(cmdinfo.mininterval, function () run_next_queued_command(client) end)
 end--}}}
 
 local function process_prefixed_command(msg, line)--{{{
@@ -112,28 +110,28 @@ local function process_prefixed_command(msg, line)--{{{
     for k, v in pairs(plugins) do
         if v.commands[cmdname] then
             found = true
-            if #cmdq < config.max_cmdq_size then
-                table.insert(cmdq, {
+            if #clients[msg.client].cmdq < config.max_cmdq_size then
+                table.insert(clients[msg.client].cmdq, {
                     name = k,
                     func = v.commands[cmdname][1],
                     msg = msg,
                     arg = line:sub(#cmdname+1),
-                    time = v.commands[cmdname].mininterval or config.default_min_cmd_interval,
+                    mininterval = v.commands[cmdname].mininterval or config.default_min_cmd_interval,
                 })
-                run_next_queued_command()
+                run_next_queued_command(msg.client)
             end
             break
         end
     end
-    if #cmdq < config.max_cmdq_size and not found then
-        table.insert(cmdq, {
+    if #clients[msg.client].cmdq < config.max_cmdq_size and not found then
+        table.insert(clients[msg.client].cmdq, {
             name = 'cmdnotfoundhandler',
             func = function ()
                 msg.client:sendprivmsg((irc.ischanname(msg.args[1]) and msg.args[1] or msg.sender.nick) or '', config.no_command_message:format(cmdname))
             end,
-            time = config.default_min_cmd_interval,
+            mininterval = config.default_min_cmd_interval,
         })
-        run_next_queued_command()
+        run_next_queued_command(msg.client)
     end
 end--}}}
 
@@ -147,6 +145,7 @@ local function add_client(net, ident)--{{{
         autojoiner=irc.AutoJoiner(client),
         sentcolor = net._sentcolor,
         receivedcolor = net._receivedcolor,
+        cmdq = {next_cmd_time = socket.gettime()},
         tracker_receivedmessage_cb = function (tracker, msg)
             if client.state == 'registering' then
                 if msg.cmd == '433' then -- nick in use
