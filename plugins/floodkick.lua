@@ -1,7 +1,8 @@
 
-local pattern = config and config.pattern or '^.?.?.?.?.?$' -- 5 chars or less
+local pattern = config and config.pattern or '^.*$' -- 5 chars or less
 local count = config and config.count or 10
 local interval = config and config.interval or 1.6
+local bantime = config and config.bantime or 30
 local kickmsg = config and config.kickmsg or 'Flooding'
 
 local timers = {}
@@ -14,7 +15,11 @@ local function msghandler(client, msg)
             t.count = t.count + 1
             if t.count >= count then
                 timers[key] = nil
-                msg.client:sendmessage('KICK', msg.args[1], msg.sender.nick, kickmsg)
+                if bot.plugins.tmpban then
+                    bot.plugins.tmpban.env.tmpban(msg.client, msg.args[1], msg.sender.nick, bantime, kickmsg)
+                else
+                    msg.client:sendmessage('KICK', msg.args[1], msg.sender.nick, kickmsg)
+                end
             else
                 t.timer:cancel()
                 t.timer = bot.eventloop:timer(interval, function () timers[key] = nil end)
