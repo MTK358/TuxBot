@@ -1,5 +1,6 @@
 
 local extension_blacklist = config and config.extension_blacklist or {'png', 'jpeg', 'jpg', 'gif', 'bmp'}
+local whitelist = config and config.whitelist or error('whitelist not specified')
 for k, v in pairs(extension_blacklist) do extension_blacklist[k] = ('\.%s$'):format(v) end
 
 local function gettitle(msg, url, redirected)
@@ -86,8 +87,22 @@ local function msghandler(client, msg)
     if msg.cmd == 'PRIVMSG' then
         local url = msg.args[2]:match('https?://[^ ]+')
         if url then
-            local c = coroutine.create(gettitle)
-            coroutine.resume(c, msg, url)
+            local addr = url:match('^%w+://([%w-.]+)')
+            print('addr', addr)
+            if addr then
+                local ok = whitelist[addr]
+                while not ok do
+                    addr = addr:match('%.(.+)$')
+                    print('addr', addr)
+                    if not addr then break end
+                    ok = whitelist[addr]
+                end
+                print('ok', ok)
+                if ok then
+                    local c = coroutine.create(gettitle)
+                    coroutine.resume(c, msg, url)
+                end
+            end
         end
     end
 end
