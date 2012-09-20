@@ -1,13 +1,12 @@
+## Warning
 
-== Warning
+**The sandbox process isn't 100% guaranteed to stop access to unsafe Lua functions (but it runs in a chroot to hopefully prevent any damage from being done). Use at your own risk.**
 
-*The sandbox process isn't 100% guaranteed to stop access to unsafe Lua functions (but it runs in a chroot to hopefully prevent any damage from being done). Use at your own risk.*
-
-== How it works
+## How it works
 
 The Lua plugin just launches a sandbox executable and reads its output. The executable is a C program that `chroot`s into an empty directory, drops root powers using `setuid` and `setgid`, sets resource limits using `setrlimit`, creates a Lua state with only safe functions, and runs the script. The executable should be owned by root and have the setuid bit set so that the bot can start it without being root (`chroot` requires the executable to be running as root to work). It might be a good idea to have a user account and group for the bot and make the sandbox executable only for root and that group.
 
-== Instructions
+## Instructions
 
 `cd` into this plugin's directory, and run:
 
