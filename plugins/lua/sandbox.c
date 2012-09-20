@@ -2,6 +2,13 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <pwd.h>
 //#undef NDEBUG
 #define NDEBUG
 #include <assert.h>
@@ -12,9 +19,60 @@
 
 int printfunc(lua_State *L);
 
+void sigxcpu_handler(int signum) {
+    fprintf(stderr, "cpulimit");
+    exit(1);
+}
+
 int main(int argc, char **argv) {
-    if (argc != 2) return 1;
-    const char *code = argv[1];
+    if (argc != 4) return 1;
+    const char *tmpdir = argv[1];
+    const char *username = argv[2];
+    const char *code = argv[3];
+
+    struct passwd *userinfo = getpwnam(username);
+
+    if (userinfo == NULL) {
+        fprintf(stderr, "sandbox: getpwnam failed\n");
+        return 1;
+    }
+
+    if (chdir(tmpdir) != 0) {
+        fprintf(stderr, "sandbox: failed to chdir into temporary dir\n");
+        return 1;
+    }
+
+    if (chroot(".") != 0) {
+        fprintf(stderr, "sandbox: failed to chroot into temporary dir\n");
+        return 1;
+    }
+
+    if (setgid(userinfo->pw_gid) != 0) {
+        fprintf(stderr, "sandbox: setgid failed\n");
+        return 1;
+    }
+
+    if (setuid(userinfo->pw_uid) != 0) {
+        fprintf(stderr, "sandbox: setuid failed\n");
+        return 1;
+    }
+
+    signal(SIGXCPU, &sigxcpu_handler);
+
+    struct rlimit cpulimit, memlimit;
+    cpulimit.rlim_cur = 1;
+    cpulimit.rlim_max = 2;
+    memlimit.rlim_cur = 10000000;
+    memlimit.rlim_max = 20000000;
+
+    if (setrlimit(RLIMIT_CPU, &cpulimit)) {
+        fprintf(stderr, "sandbox: setrlimit for cpu failed\n");
+        return 1;
+    }
+    if (setrlimit(RLIMIT_AS, &memlimit)) {
+        fprintf(stderr, "sandbox: setrlimit for memory falise\n");
+        return 1;
+    }
 
     lua_State *L = luaL_newstate();
 
@@ -77,7 +135,7 @@ int main(int argc, char **argv) {
     lua_newtable(L);
     lua_pushvalue(L, -1);
     rawsetl(L, -4, "debug");
-    moveback("getfenv");
+    //moveback("getfenv");
     moveback("gethook");
     moveback("getinfo");
     moveback("getmetatable");
