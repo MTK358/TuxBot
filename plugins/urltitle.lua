@@ -79,7 +79,7 @@ local function gettitle(msg, url, redirected)
 
     if title and #title > 0 and #title < 300 then
         title = title:gsub('<.->', ''):gsub('&lt;', '<'):gsub('&gt;', '>'):gsub('&amp;', '&'):gsub('^%s*(.-)%s*$', '%1'):gsub('%s+', ' ')
-        bot.reply(msg, title)
+        bot.reply(msg, ('(%s) %s'):format(msg.sender.nick, title))
     end
 end
 
@@ -87,8 +87,8 @@ local function msghandler(client, msg)
     if msg.cmd == 'PRIVMSG' then
         local url = msg.args[2]:match('https?://[^ ]+')
         if url then
+            url = url:match('(.+)%#') or url
             local addr = url:match('^%w+://([%w-.]+)')
-            print('addr', addr)
             if addr then
                 local ok = whitelist[addr]
                 while not ok do
@@ -97,7 +97,6 @@ local function msghandler(client, msg)
                     if not addr then break end
                     ok = whitelist[addr]
                 end
-                print('ok', ok)
                 if ok then
                     local c = coroutine.create(gettitle)
                     coroutine.resume(c, msg, url)
