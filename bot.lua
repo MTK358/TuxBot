@@ -29,23 +29,6 @@ local function isignored(msg)--{{{
     return false
 end--}}}
 
-local function send_multiline(msg, lines, notice)--{{{
-    if type(lines) == 'string' then
-        local tbl = {}
-        for line in lines:gmatch('[^\n]+') do tbl[#tbl+1] = line end
-        lines = tbl
-    end
-    local i = 1
-    local function timercb()
-        msg.client[notice=='notice'and'sendnotice'or'sendprivmsg'](msg.client, irc.ischanname(msg.args[1]) or msg.sender.nick, lines[i])
-        i = i + 1
-        if i <= #lines then
-            eventloop:timer(config.multiline_delay, timercb)
-        end
-    end
-    timercb()
-end--}}}
-
 local function run_next_queued(client)--{{{
     if not clients[client] then return end -- the client was removed
     if socket.gettime() < clients[client].queue.next_item_time then return end
@@ -58,7 +41,7 @@ local function run_next_queued(client)--{{{
     eventloop:timer(cmdinfo.interval, function () run_next_queued(client) end)
 end--}}}
 
-local function queue(client, interval, func)
+local function queue(client, interval, func)--{{{
     if not func then
         func = interval
         interval = config.default_min_queue_interval
@@ -72,7 +55,22 @@ local function queue(client, interval, func)
         })
         run_next_queued(client)
     end
-end
+end--}}}
+
+local function send_multiline(msg, lines, notice)--{{{
+    if type(lines) == 'string' then
+        local tbl = {}
+        for line in lines:gmatch('[^\n]+') do tbl[#tbl+1] = line end
+        lines = tbl
+    end
+    local i = 1
+    local function sendnext()
+        msg.client[notice=='notice'and'sendnotice'or'sendprivmsg'](msg.client, irc.ischanname(msg.args[1]) or msg.sender.nick, lines[i])
+        i = i + 1
+        if lines[i] then queue(msg.client, sendnext) end
+    end
+    queue(msg.client, sendnext)
+end--}}}
 
 local function create_plugin_env(plugin, config)--{{{
     plugin.event_handlers = {}
@@ -265,7 +263,6 @@ local function load_config()--{{{
 
     config.default_min_queue_interval = config.default_min_queue_interval or 0.4
     config.max_queue_size = config.max_queue_size or 40
-    config.multiline_delay = config.multiline_delay or 0.4
 
     for name, ident in pairs(config.identities) do
         ident.name = name

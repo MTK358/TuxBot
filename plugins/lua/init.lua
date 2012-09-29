@@ -76,5 +76,5 @@ local function lua_handler(msg, arg)
     end
 end
 
-bot.commands['lua'] = {lua_handler, help='lua <code> -- Execute a line of Lua code and print the result.', mininterval = max_lines+0.5}
+bot.commands['lua'] = {lua_handler, help='lua <code> -- Execute a line of Lua code and print the result.'}
 
