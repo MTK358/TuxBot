@@ -415,11 +415,62 @@ relay_cmds = {
         end,
     },--}}}
     ['ison'] = {--{{{
-        usage = 'relay ison <channel> <nick> -- check if a member is in another channel',
+        usage = 'relay ison [<channel@network>] <nick> -- check if a member is in another channel in the relay group',
         func = function (msg, arg)
             local chan, nick = arg:match('^ *([^ ]+) +([^ ]+) *$')
             if not chan then
-                bot.reply(msg, ('%s: Usage: relay ison <channel> <nick>'):format(msg.sender.nick))
+                local nick = arg:match('^ *([^ ]+) *$')
+                if not nick then
+                    bot.reply(msg, ('%s: Usage: relay ison <channel> <nick>'):format(msg.sender.nick))
+                    return
+                end
+            end
+            if chan then
+                local client, channame = parse_channel_name(msg, chan)
+                if not client then
+                    bot.reply(msg, ('%s: invalid channel name: %s'):format(msg.sender.nick, chan))
+                    return
+                end
+                local chanstate = bot.clients[client].tracker.chanstates[channame]
+                if chanstate then
+                    if chanstate.members[nick] then
+                        bot.reply(msg, ('%s: %s is on %s'):format(msg.sender.nick, nick, chan))
+                    else
+                        bot.reply(msg, ('%s: %s is not on %s'):format(msg.sender.nick, nick, chan))
+                    end
+                else
+                    bot.reply(msg, ('%s: (I am not on that channel)'):format(msg.sender.nick))
+                end
+            else
+                local relayinfo = isrealyed(msg)
+                if not relayinfo then
+                    bot.reply(msg, ('%s: this channel is not in a relay group'):format(msg.sender.nick))
+                else
+                    local on = {}
+                    for _, chan in ipairs(relaygroup) do
+                        local chanstate = bot.clientsbyname[chan[1]].tracker.chanstates[chan[2]]
+                        if chanstate and chanstate.members[nick] then
+                            table.insert(on, chanstate.name..'@'..chan[1])
+                        end
+                    end
+                    if #on == 0 then
+                        bot.reply(msg, ('%s: %s in not on any channel in this relay group'):format(msg.sender.nick, nick))
+                    else
+                        bot.reply(msg, ('%s: %s is on: %s'):format(msg.sender.nick, nick, table.conclat(on, ' ')))
+                    end
+                end
+            end
+        end,
+    },--}}}
+}
+if bot.plugins.tmpban then--{{{
+    relay_cmds['tmpban'] = {
+        usage = 'relay tmpban <channel> <nick> <seconds> [<message>] -- temporarily ban a member from another channel',
+        func = function (msg, arg)
+            local chan, nick, time, message = arg:match('^ *([^ ]+) +([^ ]+) +([^ ]+) +([^ ].-)$')
+            if not chan then chan, time, nick = arg:match('([^ ]+) +([^ ]+) +([^ ]+)') end
+            if not chan then
+                bot.reply(msg, ('%s: Usage: relay mode <channel> <nick> [<message>]'):format(msg.sender.nick))
                 return
             end
             local client, channame = parse_channel_name(msg, chan)
@@ -429,17 +480,18 @@ relay_cmds = {
             end
             local chanstate = bot.clients[client].tracker.chanstates[channame]
             if chanstate then
-                if chanstate.members[nick] then
-                    bot.reply(msg, ('%s: %s is on %s'):format(msg.sender.nick, nick, chan))
+                if is_sender_trusted(msg, client, channame) then
+                    bot.plugins.tmpban.env.tmpban(msg.client, channame, nick, time, message)
                 else
-                    bot.reply(msg, ('%s: %s is not on %s'):format(msg.sender.nick, nick, chan))
+                    bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
                 end
             else
                 bot.reply(msg, ('%s: (I am not on that channel)'):format(msg.sender.nick))
             end
         end,
-    },--}}}
-}--}}}
+    }
+end--}}}
+--}}}
 
 local function relay_cmd_handler(msg, arg)--{{{
     local cmd, other = arg:match('^ *([^ ]+)(.-)$')
