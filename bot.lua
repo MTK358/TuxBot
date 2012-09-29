@@ -61,7 +61,7 @@ end--}}}
 local function queue(msg, interval, func)
     if not func then
         func = interval
-        interval = config.default_min_cmd_interval
+        interval = config.default_min_queue_interval
     end
     if #clients[msg.client].queue < config.max_queue_size then
         table.insert(clients[msg.client].queue, {
