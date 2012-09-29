@@ -5,8 +5,11 @@ local responses = {}
 
 for k, v in pairs(config.responses) do
     local success, result = pcall(re.compile, k)
-    if not success then error(('error in pattern [[%s]]: %s'):format(k, result)) end
-    responses[result] = v
+    if not success then
+        error(('error in pattern [[%s]]: %s'):format(k, result))
+    else
+        responses[result] = v
+    end
 end
 
 local function msghandler(client, msg, ignored)
@@ -27,7 +30,9 @@ local function msghandler(client, msg, ignored)
                         return '%'..c
                     end
                 end)
-                bot.reply(msg, reply)
+                bot.queue(client, function ()
+                    bot.reply(msg, reply)
+                end)
                 break
             end
         end

@@ -58,19 +58,19 @@ local function run_next_queued(client)--{{{
     eventloop:timer(cmdinfo.interval, function () run_next_queued(client) end)
 end--}}}
 
-local function queue(msg, interval, func)
+local function queue(client, interval, func)
     if not func then
         func = interval
         interval = config.default_min_queue_interval
     end
     if #clients[msg.client].queue < config.max_queue_size then
         table.insert(clients[msg.client].queue, {
-            msg = msg,
+            client = client,
             interval = interval,
             func = func,
             name = k,
         })
-        run_next_queued(msg.client)
+        run_next_queued(client)
     end
 end
 
@@ -128,14 +128,14 @@ local function process_prefixed_command(msg, line)--{{{
     for k, v in pairs(plugins) do
         if v.commands[cmdname] then
             found = true
-            queue(msg, v.commands[cmdname].mininterval, function ()
+            queue(msg.client, v.commands[cmdname].mininterval, function ()
                 v.commands[cmdname][1](msg, line:sub(#cmdname+1))
             end)
             break
         end
     end
     if #clients[msg.client].queue < config.max_queue_size and not found then
-        queue(msg, function ()
+        queue(msg.client, function ()
             msg.client:sendprivmsg((irc.ischanname(msg.args[1]) and msg.args[1] or msg.sender.nick) or '', config.no_command_message:format(cmdname))
         end)
     end

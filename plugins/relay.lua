@@ -31,21 +31,23 @@ local function isrelayed(msg, originchan)--{{{
 end--}}}
 
 local function relay(text, info, how)--{{{
-    for _, chan in ipairs(info.group) do
-        if chan ~= info.origin then
-            issendingrelay = true
-            if not how then
-                bot.clientsbyname[chan[1]]:sendprivmsg(chan[2], text)
-            elseif how == 'notice' then
-                bot.clientsbyname[chan[1]]:sendnotice(chan[2], text)
-            elseif how == 'me' then
-                bot.clientsbyname[chan[1]]:sendctcp(chan[2], 'ACTION', text)
-            end
-            issendingrelay = false
-        end
-    end
     local client = bot.clientsbyname[info.origin[1]]
-    relaymsgs[{client, client:lower(info.origin[2]), text}] = true
+    bot.queue(client, function ()
+        for _, chan in ipairs(info.group) do
+            if chan ~= info.origin then
+                issendingrelay = true
+                if not how then
+                    bot.clientsbyname[chan[1]]:sendprivmsg(chan[2], text)
+                elseif how == 'notice' then
+                    bot.clientsbyname[chan[1]]:sendnotice(chan[2], text)
+                elseif how == 'me' then
+                    bot.clientsbyname[chan[1]]:sendctcp(chan[2], 'ACTION', text)
+                end
+                issendingrelay = false
+            end
+        end
+        relaymsgs[{client, client:lower(info.origin[2]), text}] = true
+    end)
 end--}}}
 
 local function feedbackcheck(msg, net, chan, text)--{{{
