@@ -1,6 +1,6 @@
 
-#include <lua.h>
-#include <lauxlib.h>
+#include "luasrc/lua.h"
+#include "luasrc/lauxlib.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
@@ -13,13 +13,11 @@
 #define NDEBUG
 #include <assert.h>
 
-#define rawgetl(L, index, key) lua_pushliteral(L, key); lua_rawget(L, index>0?index:index-1);
-#define rawsetl(L, index, key) lua_pushliteral(L, key); lua_insert(L, -2); lua_rawset(L, index>0?index:index-1);
-#define moveback(name) rawgetl(L, -2, name); assert(lua_gettop(L)!=100); rawsetl(L, -2, name);
+static void tostring (lua_State *L, int index);
 
-int printfunc(lua_State *L);
+static int printfunc(lua_State *L);
 
-void sigxcpu_handler(int signum) {
+static void sigxcpu_handler(int signum) {
     fprintf(stderr, "cpulimit");
     exit(1);
 }
@@ -74,159 +72,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    lua_State *L = luaL_newstate();
-
-    // load the libs and put them in a separate table
-    luaL_openlibs(L);
-    lua_pushvalue(L, LUA_GLOBALSINDEX);
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    lua_replace(L, LUA_GLOBALSINDEX);
-    assert(lua_gettop(L) == 2);
-
-    lua_pushvalue(L, -1);
-    lua_setglobal(L, "_G");
-
-    // move the safe functions to the new global table
-    moveback("assert");
-    assert(lua_gettop(L) == 2);
-    moveback("collectgarbage");
-    assert(lua_gettop(L) == 2);
-    moveback("error");
-    moveback("getfenv");
-    moveback("getmetatable");
-    moveback("ipairs");
-    moveback("load");
-    moveback("loadstring");
-    moveback("module");
-    moveback("next");
-    moveback("pairs");
-    moveback("pcall");
-    moveback("rawequal");
-    moveback("rawget");
-    moveback("rawset");
-    moveback("select");
-    moveback("setfenv");
-    moveback("setmetatable");
-    moveback("tonumber");
-    moveback("tostring");
-    moveback("type");
-    moveback("unpack");
-    moveback("xpcall");
-    moveback("_VERSION");
-
-    rawgetl(L, -2, "coroutine");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "coroutine");
-    assert(lua_gettop(L) == 4);
-    moveback("create");
-    assert(lua_gettop(L) == 4);
-    moveback("resume");
-    assert(lua_gettop(L) == 4);
-    moveback("running");
-    moveback("status");
-    moveback("wrap");
-    moveback("yield");
-    lua_pop(L, 2);
-    assert(lua_gettop(L) == 2);
-
-    rawgetl(L, -2, "debug");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "debug");
-    //moveback("getfenv");
-    moveback("gethook");
-    moveback("getinfo");
-    moveback("getmetatable");
-    moveback("sethook");
-    moveback("setmetatable");
-    moveback("traceback");
-    lua_pop(L, 2);
-
-    rawgetl(L, -2, "math");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "math");
-    moveback("abs");
-    moveback("acos");
-    moveback("asin");
-    moveback("atan");
-    moveback("atan2");
-    moveback("ceil");
-    moveback("cos");
-    moveback("cosh");
-    moveback("deg");
-    moveback("exp");
-    moveback("floor");
-    moveback("fmod");
-    moveback("frexp");
-    moveback("huge");
-    moveback("ldexp");
-    moveback("log");
-    moveback("log10");
-    moveback("max");
-    moveback("min");
-    moveback("modf");
-    moveback("pi");
-    moveback("pow");
-    moveback("rad");
-    moveback("random");
-    moveback("randomseed");
-    moveback("sin");
-    moveback("sinh");
-    moveback("sqrt");
-    moveback("tan");
-    moveback("tanh");
-    lua_pop(L, 2);
-
-    rawgetl(L, -2, "os");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "os");
-    moveback("clock");
-    moveback("date");
-    moveback("difftime");
-    moveback("time");
-    lua_pop(L, 2);
-
-    rawgetl(L, -2, "string");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "string");
-    moveback("byte");
-    moveback("char");
-    moveback("dump");
-    moveback("find");
-    moveback("format");
-    moveback("gmatch");
-    moveback("gsub");
-    moveback("len");
-    moveback("lower");
-    moveback("match");
-    moveback("rep");
-    moveback("reverse");
-    moveback("sub");
-    moveback("upper");
-    lua_pop(L, 2);
-
-    rawgetl(L, -2, "table");
-    lua_newtable(L);
-    lua_pushvalue(L, -1);
-    rawsetl(L, -4, "table");
-    moveback("concat");
-    moveback("insert");
-    moveback("maxn");
-    moveback("remove");
-    moveback("sort");
-    lua_pop(L, 2);
-    assert(lua_gettop(L) == 2);
-
     // run the script
+    lua_State *L = luaL_newstate();
+    luaL_openlibs(L);
     lua_newtable(L);
     lua_pushvalue(L, -1);
-    lua_getglobal(L, "tostring");
-    lua_pushcclosure(L, &printfunc, 2);
+    lua_pushcclosure(L, &printfunc, 1);
     lua_setglobal(L, "print");
     int oldstack = lua_gettop(L);
     luaL_loadstring(L, code);
@@ -236,9 +87,7 @@ int main(int argc, char **argv) {
         if (newstack != oldstack) {
             int i;
             for (i=oldstack+1; i<=newstack; ++i) {
-                lua_getglobal(L, "tostring");
-                lua_pushvalue(L, i);
-                lua_call(L, 1, 1);
+                tostring(L, i);
                 size_t len = lua_objlen(L, oldstack);
                 lua_rawseti(L, oldstack, len+1);
                 if (i == newstack) lua_pushliteral(L, "\n"); else lua_pushliteral(L, " ");
@@ -263,17 +112,39 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-int printfunc(lua_State *L) {
+static int printfunc(lua_State *L) {
     int nargs = lua_gettop(L);
     int i;
     for (i=1; i<=nargs; ++i) {
-        lua_pushvalue(L, lua_upvalueindex(2));
-        lua_pushvalue(L, i);
-        lua_call(L, 1, 1);
+        tostring(L, i);
         size_t len = lua_objlen(L, lua_upvalueindex(1));
         lua_rawseti(L, lua_upvalueindex(1), len+1);
         if (i == nargs) lua_pushliteral(L, "\n"); else lua_pushliteral(L, " ");
         lua_rawseti(L, lua_upvalueindex(1), len+2);
     }
+}
+
+// modified from the standard Lua library tostring implementation
+static void tostring (lua_State *L, int index) {
+  if (luaL_callmeta(L, index, "__tostring"))  /* is there a metafield? */
+    return;  /* use its value */
+  switch (lua_type(L, index)) {
+    case LUA_TNUMBER:
+      lua_pushvalue(L, index);
+      lua_tostring(L, -1);
+      break;
+    case LUA_TSTRING:
+      lua_pushvalue(L, index);
+      break;
+    case LUA_TBOOLEAN:
+      lua_pushstring(L, (lua_toboolean(L, index) ? "true" : "false"));
+      break;
+    case LUA_TNIL:
+      lua_pushliteral(L, "nil");
+      break;
+    default:
+      lua_pushfstring(L, "%s: %p", luaL_typename(L, index), lua_topointer(L, index));
+      break;
+  }
 }
 

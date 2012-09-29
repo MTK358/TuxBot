@@ -1,3 +1,4 @@
 /backup
 *.sw[op]
+*.o
 
