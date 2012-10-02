@@ -54,12 +54,9 @@ function tmpban(client, chan, nick, time, message)
 end
 
 local function tmpban_callback(msg, arg)
-    local cs = bot.clients[msg.client].tracker.chanstates[msg.args[1]]
-    if cs then
-        if not (cs.members[msg.sender.nick] and cs.members[msg.sender.nick].mode:match('o')) then
-            bot.reply(msg, msg.sender.nick..': You are not permitted to use this command.')
-            return
-        end
+    if not bot.plugins.perms.check('tmpban', msg.client, msg.args[1], msg.sender.nick) then
+        bot.reply(msg, msg.sender.nick..': You are not permitted to use this command.')
+        return
     end
     local nick, time, message = arg:match('^ *([^ ]+) +(%d+) +([^ ].*)$')
     if not nick then

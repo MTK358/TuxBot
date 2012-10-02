@@ -14,7 +14,7 @@ local socket = require 'socket'
 local config
 local clients = {}
 local clientsbyname = {}
-local plugins = {}
+local plugins, pluginenvs = {}, {}
 
 local eventhandlers = {}
 setmetatable(eventhandlers, {__mode='v'})
@@ -32,9 +32,8 @@ end--}}}
 local function run_next_queued(client)--{{{
     if not clients[client] then return end -- the client was removed
     if socket.gettime() < clients[client].queue.next_item_time then return end
-    local cmdinfo = clients[client].queue[1]
+    local cmdinfo = table.remove(clients[client].queue, 1)
     if not cmdinfo then return end
-    table.remove(clients[client].queue, 1)
     local success, err = pcall(cmdinfo.func)
     if not success then print(('***** error in queued function: %s'):format(tostring(err))) end
     clients[client].queue.next_item_time = socket.gettime() + cmdinfo.interval
@@ -45,13 +44,14 @@ local function queue(client, interval, func)--{{{
     if not func then
         func = interval
         interval = config.default_min_queue_interval
+    elseif not interval then
+        interval = config.default_min_queue_interval
     end
-    if #clients[msg.client].queue < config.max_queue_size then
-        table.insert(clients[msg.client].queue, {
+    if #clients[client].queue < config.max_queue_size then
+        table.insert(clients[client].queue, {
             client = client,
             interval = interval,
             func = func,
-            name = k,
         })
         run_next_queued(client)
     end
@@ -86,7 +86,8 @@ local function create_plugin_env(plugin, config)--{{{
             event_callbacks = plugin.event_handlers,
             clients = clients,
             clientsbyname = clientsbyname,
-            plugins = plugins,
+            plugininfo = plugins,
+            plugins = pluginenvs,
             isignored = isignored,
             queue = queue,
             send_multiline = send_multiline,
@@ -303,6 +304,7 @@ local function load_config()--{{{
                 local success, err = pcall(f)
                 if success then
                     plugins[name] = plugintbl
+                    pluginenvs[name] = env
                 else
                     print(('***** error in "%s" plugin: %s'):format(name, err))
                 end
@@ -311,7 +313,7 @@ local function load_config()--{{{
             end
         end
     end
-    for name in pairs(removed_plugins) do plugins[name] = nil end
+    for name in pairs(removed_plugins) do plugins[name], pluginenvs[name] = nil, nil end
 end--}}}
 
 local function show_command_ref()--{{{
@@ -352,6 +354,7 @@ local stdin_commands = {--{{{
             local success, err = pcall(f)
             if success then
                 plugins[name] = plugintbl
+                pluginenvs[name] = env
                 print('successfully reloaded plugin')
             else
                 print(('***** error in "%s" plugin: %s'):format(name, err))

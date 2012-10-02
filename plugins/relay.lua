@@ -55,7 +55,7 @@ local function feedbackcheck(msg, net, chan, text)--{{{
         if sent[1] == msg.client and sent[2] == msg.client:lower(chan) then
             if text:match(sent[3]:gsub('[^%w_]', '%%%1')) then
                 if bot.plugins.tmpban then
-                    bot.plugins.tmpban.env.tmpban(msg.client, chan, msg.sender.nick, 60, 'Relay feedback loop')
+                    bot.plugins.tmpban.tmpban(msg.client, chan, msg.sender.nick, 60, 'Relay feedback loop')
                 else
                     msg.client:sendmessage('KICK', chan, msg.sender.nick, 'Relay feedback loop')
                 end
@@ -342,7 +342,7 @@ relay_cmds = {
             local chanstate = bot.clients[client].tracker.chanstates[channame]
             if chanstate then
                 if newtopic then
-                    if is_sender_trusted(msg, client, channame) then
+                    if bot.plugins.perms.check('relaytopic', msg.client, msg.args[1], msg.sender.nick) then
                         msg.client:sendmessage('TOPIC', channame, newtopic)
                     else
                         bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
@@ -376,14 +376,14 @@ relay_cmds = {
             end
             local chanstate = bot.clients[client].tracker.chanstates[channame]
             if chanstate then
-                if newtopic then
-                    if is_sender_trusted(msg, client, channame) then
+                if newmode then
+                    if bot.plugins.perms.check('relaymode', msg.client, msg.args[1], msg.sender.nick) then
                         msg.client:sendmessage('MODE', channame, unpack(newmode))
                     else
                         bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
                     end
                 else
-                    bot.reply(msg, ('%s: %s'):format(msg.sender.nick, chanstate.mode or '(channel mode unknown)'))
+                    bot.reply(msg, ('%s: %s'):format(msg.sender.nick, chanstate.mode))
                 end
             else
                 bot.reply(msg, ('%s: (I am not on that channel)'):format(msg.sender.nick))
@@ -393,10 +393,14 @@ relay_cmds = {
     ['kick'] = {--{{{
         usage = 'relay kick <channel> <nick> [<message>] -- kick a member from another channel',
         func = function (msg, arg)
+            if not bot.plugins.perms.check('relayban', msg.client, msg.args[1], msg.sender.nick) then
+                bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
+                return
+            end
             local chan, nick, message = arg:match('^ *([^ ]+) +([^ ]+) +([^ ].-)$')
             if not chan then chan, nick = arg:match('([^ ]+) +([^ ]+)') end
             if not chan then
-                bot.reply(msg, ('%s: Usage: relay mode <channel> <nick> [<message>]'):format(msg.sender.nick))
+                bot.reply(msg, ('%s: Usage: relay kick <channel> <nick> [<message>]'):format(msg.sender.nick))
                 return
             end
             local client, channame = parse_channel_name(msg, chan)
@@ -406,11 +410,7 @@ relay_cmds = {
             end
             local chanstate = bot.clients[client].tracker.chanstates[channame]
             if chanstate then
-                if is_sender_trusted(msg, client, channame) then
-                    msg.client:sendmessage('KICK', channame, nick, message)
-                else
-                    bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
-                end
+                msg.client:sendmessage('KICK', channame, nick, message)
             else
                 bot.reply(msg, ('%s: (I am not on that channel)'):format(msg.sender.nick))
             end
@@ -469,10 +469,14 @@ if bot.plugins.tmpban then--{{{
     relay_cmds['tmpban'] = {
         usage = 'relay tmpban <channel> <nick> <seconds> [<message>] -- temporarily ban a member from another channel',
         func = function (msg, arg)
+            if not bot.plugins.perms.check('relayban', msg.client, msg.args[1], msg.sender.nick) then
+                bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
+                return
+            end
             local chan, nick, time, message = arg:match('^ *([^ ]+) +([^ ]+) +([^ ]+) +([^ ].-)$')
             if not chan then chan, time, nick = arg:match('([^ ]+) +([^ ]+) +([^ ]+)') end
             if not chan then
-                bot.reply(msg, ('%s: Usage: relay mode <channel> <nick> [<message>]'):format(msg.sender.nick))
+                bot.reply(msg, ('%s: Usage: relay tmpban <channel> <nick> <seconds> [<message>]'):format(msg.sender.nick))
                 return
             end
             local client, channame = parse_channel_name(msg, chan)
@@ -482,11 +486,7 @@ if bot.plugins.tmpban then--{{{
             end
             local chanstate = bot.clients[client].tracker.chanstates[channame]
             if chanstate then
-                if is_sender_trusted(msg, client, channame) then
-                    bot.plugins.tmpban.env.tmpban(msg.client, channame, nick, time, message)
-                else
-                    bot.reply(msg, ('%s: you are not permitted to use that command'):format(msg.sender.nick))
-                end
+                bot.plugins.tmpban.tmpban(msg.client, channame, nick, time, message)
             else
                 bot.reply(msg, ('%s: (I am not on that channel)'):format(msg.sender.nick))
             end
