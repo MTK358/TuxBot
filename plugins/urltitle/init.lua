@@ -1,10 +1,21 @@
 
 local extension_blacklist = config and config.extension_blacklist or {'png', 'jpeg', 'jpg', 'gif', 'bmp'}
-local whitelist = config and config.whitelist or error('whitelist not specified')
+local whitelist = config and config.whitelist or 'whitelist.txt'
+
 for k, v in pairs(extension_blacklist) do extension_blacklist[k] = ('\.%s$'):format(v) end
 
-local function gettitle(msg, url, redirected)
+do
+    local f = assert(io.open(whitelist))
+    local tbl = {}
+    for line in f:lines() do
+        local match = line:match('%S+')
+        if match then tbl[match] = true end
+    end
+    f:close()
+    whitelist = tbl
+end
 
+local function gettitle(msg, url, redirected)
     local lowerurl = url:lower()
     for _, ext in pairs(extension_blacklist) do
         if lowerurl:match(ext) then return end
@@ -93,7 +104,6 @@ local function msghandler(client, msg)
                 local ok = whitelist[addr]
                 while not ok do
                     addr = addr:match('%.(.+)$')
-                    print('addr', addr)
                     if not addr then break end
                     ok = whitelist[addr]
                 end
