@@ -212,23 +212,23 @@ local function add_client(net, ident)--{{{
             print(('* %s: %s%s'):format(clients[client].name, state, ((...) and ' ('..table.concat({...}, ' ')..')' or '')))
         end,
     }
-    tbl.tracker:add_event_handler('receivedmessage', tbl.tracker_receivedmessage_cb)
-    client:add_event_handler('receivedmessage_post', tbl.receivedmessage_post_cb)
-    client:add_event_handler('receivedmessage_pre', tbl.receivedmessage_pre_cb)
-    client:add_event_handler('sentmessage', tbl.sentmessage_cb)
-    client:add_event_handler('statechanged', tbl.statechanged_cb)
+    tbl.tracker:add_callback('receivedmessage', tbl.tracker_receivedmessage_cb)
+    client:add_callback('receivedmessage_post', tbl.receivedmessage_post_cb)
+    client:add_callback('receivedmessage_pre', tbl.receivedmessage_pre_cb)
+    client:add_callback('sentmessage', tbl.sentmessage_cb)
+    client:add_callback('statechanged', tbl.statechanged_cb)
     function add_client_event_relay(client, event)
         tbl[event..'_cb'] = function (...)
             send_event_to_plugins(event, ...)
         end
-        client:add_event_handler(event, tbl[event..'_cb'])
+        client:add_callback(event, tbl[event..'_cb'])
     end
     function add_tracker_event_relay(tracker, event)
         local n = 'tracker_'..event
         tbl['tracker_'..event..'_cb'] = function (...)
             send_event_to_plugins(n, ...)
         end
-        tracker:add_event_handler(event, tbl['tracker_'..event..'_cb'])
+        tracker:add_callback(event, tbl['tracker_'..event..'_cb'])
     end
     add_client_event_relay(client, 'sentprivmsg')
     add_client_event_relay(client, 'sentnotice')

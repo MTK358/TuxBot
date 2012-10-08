@@ -2,13 +2,16 @@
 local socket = require 'socket'
 local ssl = nil
 
+local _M = {}
+
 -- Enable SSL support.
 -- By default this module only depends on LuaSocket, calling this function
 -- requires LuaSec. If you try to use SSL without calling this function first,
 -- an error will be thrown.
 local function enable_ssl()--{{{
     ssl = require 'ssl'
-end--}}}
+end
+_M.enable_ssl = enable_ssl--}}}
 
 -- Convert a sender prefix string into a table.
 -- For example, "a!b@c" is converted to {nick='a', user='b', host='c',
@@ -18,7 +21,8 @@ local function sender_prefix_to_table(str)--{{{
     local nick, user, host = str:match('^(.+)!(.+)@(.+)$')
     if not nick then return {host = str, str = str} end
     return {nick = nick, user = user, host = host, str = str}
-end--}}}
+end
+_M.sender_prefix_to_table = sender_prefix_to_table--}}}
 
 local lowlevel_quote_table = {--{{{
     ['\0'] = '\0160',
@@ -32,15 +36,12 @@ local function lowlevel_quote(str)--{{{
     return string.gsub(str, '[%z\n\r\016]', lowlevel_quote_table)
 end--}}}
 
-local lowlevel_dequote_table = {--{{{
+local lowlevel_dequote_table = setmetatable({--{{{
     ['\0160'] = '\0',
     ['\016n'] = '\n',
     ['\016r'] = '\r',
     ['\016\016'] = '\016'
-}--}}}
-
-setmetatable(lowlevel_dequote_table,
-             {__index = function (t, k) return k:sub(2, 2) end})
+}, {__index = function (t, k) return k:sub(2, 2) end})--}}}
 
 -- Dequote a received message string.
 local function lowlevel_dequote(str)--{{{
@@ -81,7 +82,7 @@ end--}}}
 --
 -- The mynick arg is to fill in the sender prefix if it's not in the line, and
 -- the client arg fills the client field of the table.
-local function message_line_to_table(line, mynick, client)--{{{
+local function message_line_to_table(line, client)--{{{
     local time = os.time()
     local prefix, remaining = line:match('^:([^ ]+) +(.*)')
     remaining = remaining or line
@@ -111,93 +112,101 @@ local function message_line_to_table(line, mynick, client)--{{{
         time = time,
         line = line,
         client = client,
-        sender = prefix and sender_prefix_to_table(prefix) or {nick=mynick},
+        sender = prefix and sender_prefix_to_table(prefix) or {nick=client:get_nick()},
         cmd = cmdtype,
         args = args,
     }
-end--}}}
+end
+_M.message_line_to_table = message_line_to_table--}}}
 
 -- Check whether a command is a numeric reply.
 local function isnumreply(cmd)--{{{
     return string.match(cmd, '%d%d%d')
-end--}}}
+end
+_M.isnumreply = isnumreply--}}}
 
 -- Check whether a command is a numeric error reply.
 local function iserrreply(cmd)--{{{
     return string.match(cmd, '[45]%d%d')
-end--}}}
+end
+_M.iserrreply = iserrreply--}}}
 
+-- Case-insensitivity handling functions
 local rfc1459_upper, rfc1459_lower, strict_rfc1459_upper, strict_rfc1459_lower--{{{
 do
     local rfc1459_upper_table = {['{']='[', ['|']='\\', ['}']=']', ['^']='~'}
     function rfc1459_upper(str)
         return string.gsub(string.upper(str), '[{|}^]', rfc1459_upper_table)
     end
-
+    _M.rfc1459_upper = rfc1459_upper
     local rfc1459_lower_table = {['[']='{', ['\\']='|', [']']='}', ['~']='^'}
     function rfc1459_lower(str)
         return string.gsub(string.lower(str), '[%[\\%]~]', rfc1459_lower_table)
     end
-
+    _M.rfc1459_lower = rfc1459_lower
     local strict_rfc1459_upper_table = {['{']='[', ['|']='\\', ['}']=']'}
     function strict_rfc1459_upper(str)
         return string.gsub(string.upper(str), '[{|}]', strict_rfc1459_upper_table)
     end
-
+    _M.strict_rfc1459_upper = strict_rfc1459_upper
     local strict_rfc1459_lower_table = {['[']='{', ['\\']='|', [']']='}'}
     function strict_rfc1459_lower(str)
         return string.gsub(string.lower(str), '[%[\\%]]', strict_rfc1459_lower_table)
     end
-end--}}}
-
-local function rfc1459_nameeq(a, b)--{{{
+    _M.strict_rfc1459_lower = strict_rfc1459_lower
+end
+local function rfc1459_nameeq(a, b)
     return a == b or rfc1459_lower(a) == rfc1459_lower(b)
-end--}}}
-
-local function strict_rfc1459_nameeq(a, b)--{{{
+end
+_M.rfc1459_nameeq = rfc1459_nameeq
+local function strict_rfc1459_nameeq(a, b)
     return a == b or strict_rfc1459_lower(a) == strict_rfc1459_lower(b)
-end--}}}
-
-local function ascii_nameeq(a, b)--{{{
+end
+_M.strict_rfc1459_nameeq = strict_rfc1459_nameeq
+local function ascii_nameeq(a, b)
     return a == b or string.lower(a) == string.lower(b)
-end--}}}
-
-local rfc1459_name_key_metatable = {--{{{
+end
+_M.ascii_nameeq = ascii_nameeq
+local rfc1459_name_key_metatable = {
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and rfc1459_lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and rfc1459_lower(key) or key, val)
     end,
-}--}}}
-
-local strict_rfc1459_name_key_metatable = {--{{{
+}
+_M.rfc1459_name_key_metatable = rfc1459_name_key_metatable
+local strict_rfc1459_name_key_metatable = {
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and strict_rfc1459_lower(key) or key, val)
     end,
-}--}}}
-
-local ascii_name_key_metatable = {--{{{
+}
+_M.strict_rfc1459_name_key_metatable = strict_rfc1459_name_key_metatable
+local ascii_name_key_metatable = {
     __index = function (tbl, key)
         return rawget(tbl, type(key)=='string' and string.lower(key) or key)
     end,
     __newindex = function (tbl, key, val)
         rawset(tbl, type(key)=='string' and string.lower(key) or key, val)
     end,
-}--}}}
+}
+_M.ascii_name_key_metatable = ascii_name_key_metatable
+--}}}
 
 -- See if a string is a valid channel name.
 local function ischanname(str)--{{{
     return str:match('^[&#+!][^%z\007\r\n ,:]+$')
-end--}}}
+end
+_M.ischanname = ischanname--}}}
 
 -- See if a string is a valid nick.
 local function isnick(str)--{{{
     return str:match('^%a[%a%d[%]\\`_^{|}-]*$')
-end--}}}
+end
+_M.isnick = isnick--}}}
 
 -- Apply a mode string to another.
 -- If the diff doesn't start with a '+' or '-', '+' is assumed.  The chars in
@@ -236,10 +245,12 @@ local function applymode(str, diff)--{{{
     for i in str:gmatch('.') do chars[#chars+1] = i end
     table.sort(chars)
     return prefix..table.concat(chars)
-end--}}}
+end
+_M.applymode = applymode--}}}
 
 -- Manage a connection to an IRC network.
 local Client = {}--{{{
+_M.Client = Client
 Client.__index = Client
 setmetatable(Client, {__call = function (t, ...) return Client.new(...) end})
 
@@ -422,16 +433,19 @@ end--}}}
 --
 -- Note that all events have an arg that contains the Client before the rest of
 -- the args.
-function Client:add_callback(event, cb)--{{{
-    self._eventhandlers[event][cb] = true
+function Client:add_callback(event, arg, cb)--{{{
+    if not cb then arg, cb = nil, arg end
+    if arg then
+        local handlers = self._argeventhandlers[event]
+        self._eventhandlers[event][cb] = true
+    else
+        self._eventhandlers[event][cb] = true
+    end
 end--}}}
 
 function Client:remove_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = nil
 end--}}}
-
-Client.add_event_handler = Client.add_callback
-Client.remove_event_handler = Client.remove_callback
 
 -- (private) clean up the current connection and reconnect after an interval
 function Client:_reconnect(reason)--{{{
@@ -594,7 +608,7 @@ function Client:_on_readable()--{{{
     elseif self.state == 'sslhandshake' then
         self:_do_ssl_handshake()
     else
-        local data, err, part = self._conn:receive('*a')--8192)
+        local data, err, part = self._conn:receive(8192)
         if not data then data = part else err = 'closed' end
         if data then
             self._recvbuf = self._recvbuf..data
@@ -603,7 +617,7 @@ function Client:_on_readable()--{{{
                 if not match then break end
                 self._recvbuf = self._recvbuf:sub(#match+1)
                 line = lowlevel_dequote(line)
-                local msg = message_line_to_table(line, self._nick, self)
+                local msg = message_line_to_table(line, self)
                 if msg then
                     self:_trigger_event_handlers('receivedmessage_pre', msg)
                     if msg.cmd == '001' and #msg.args >= 1 and self.state == 'registering' then
@@ -787,7 +801,7 @@ function Client:_trigger_event_handlers(event, ...)--{{{
     for cb in pairs(self._eventhandlers[event]) do
         local success, errmsg = pcall(cb, self, ...)
         if not success then
-            io.stderr:write(('error in irc.Client "%s" event handler: %s\n'):format(event, tostring(errmsg)))
+            io.stderr:write(('error in irc.Client "%s" callback: %s\n'):format(event, tostring(errmsg)))
         end
     end
 end--}}}
@@ -819,6 +833,7 @@ end--}}}
 -- }
 
 local ChannelTracker = {}--{{{
+_M.ChannelTracker = ChannelTracker
 ChannelTracker.__index = ChannelTracker
 setmetatable(ChannelTracker, {__call = function (t, ...) return ChannelTracker.new(...) end})
 
@@ -829,8 +844,13 @@ function ChannelTracker.new(client)--{{{
     self.netinfo = client.netinfo
     self.identinfo = client.identinfo
     self.defaults = client.defaults
-    self._unknownprefixes = {}
-    setmetatable(self._unknownprefixes, client:name_key_metatable())
+    local nkm = client:name_key_metatable()
+    self._memberprefixes = setmetatable({}, {
+        __index = function (...) return nkm.__index(...) end,
+        __newindex = function (...) return nkm.__newindex(...) end,
+        __mode='v',
+    })
+    prefixes = {}
     self.chanstates = {}
     setmetatable(self.chanstates, client:name_key_metatable())
     self._eventhandlers = {
@@ -847,13 +867,13 @@ function ChannelTracker.new(client)--{{{
     }
     for k, v in pairs(self._eventhandlers) do setmetatable(v, {__mode='k'}) end
     self._msghandler = function (client, msg)
-        if self._unknownprefixes[msg.sender.nick] and msg.sender.host then
-            self._unknownprefixes[msg.sender.nick] = nil
-            for k, v in pairs(self.chanstates) do
-                local member = v.members[msg.sender.nick]
-                if member then
-                    member.prefix = msg.sender
-                    self:_trigger_event_handlers('memberprefix', v.name, member.prefix.nick, member.prefix)
+        local sendernick = msg.sender and msg.sender.nick
+        if sendernick and msg.sender.host then
+            local prefix = self._memberprefixes[sendernick]
+            if prefix then
+                if client:nameeq(sendernick, prefix.nick) and msg.sender.host ~= prefix.host then
+                    prefix.host = msg.sender.host
+                    prefix.user = msg.sender.user
                 end
             end
         end
@@ -869,8 +889,8 @@ function ChannelTracker.new(client)--{{{
             setmetatable(self.chanstates, client:name_key_metatable())
         end
     end
-    client:add_event_handler('receivedmessage_pre', self._msghandler)
-    client:add_event_handler('statechanged', self._statehandler)
+    client:add_callback('receivedmessage_pre', self._msghandler)
+    client:add_callback('statechanged', self._statehandler)
     return self
 end--}}}
 
@@ -894,13 +914,6 @@ end--}}}
 ChannelTracker.add_event_handler = ChannelTracker.add_callback
 ChannelTracker.remove_event_handler = ChannelTracker.remove_callback
 
-function ChannelTracker:_remove_from_unknownprefixes(nick)--{{{
-    for _, chan in pairs(self.chanstates) do
-        if chan.members[nick] then return end
-    end
-    self._unknownprefixes[nick] = nil
-end--}}}
-
 ChannelTracker._msghandlers = {--{{{
     ['JOIN'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and ischanname(msg.args[1]) and msg.sender and msg.sender.nick) then return end
@@ -912,7 +925,15 @@ ChannelTracker._msghandlers = {--{{{
                 -- mode = nil
             }
             setmetatable(chan.members, msg.client:name_key_metatable())
-            chan.members[self._client:get_nick()] = {prefix={nick=self._client:get_nick()}, mode='+'}
+            local mynick = self._client:get_nick()
+            local prefix = self._memberprefixes[mynick]
+            if not prefix then
+                prefix = msg.sender
+                self._memberprefixes[mynick] = prefix
+            else
+                prefix = self._memberprefixes[mynick]
+            end
+            chan.members[mynick] = {prefix=prefix, mode='+'}
             self.chanstates[msg.args[1]] = chan
             self:_trigger_event_handlers('joinedchannel', msg.args[1], chan)
             if self.netinfo.send_names_on_join or self.defaults.send_names_on_join then self._client:sendmessage('NAMES', msg.args[1]) end
@@ -921,10 +942,10 @@ ChannelTracker._msghandlers = {--{{{
         else
             local chan = self.chanstates[msg.args[1]]
             if chan then
-                chan.members[msg.sender.nick] = {
-                    mode = '+',
-                    prefix = msg.sender,
-                }
+                if not self._memberprefixes[msg.sender.nick] then
+                    self._memberprefixes[msg.sender.nick] = msg.sender
+                end
+                chan.members[msg.selder.nick] = {prefix=msg.sender, mode='+'}
                 self:_trigger_event_handlers('memberadded', msg.args[1], msg.sender.nick, 'JOIN')
             end
         end
@@ -934,10 +955,6 @@ ChannelTracker._msghandlers = {--{{{
         if self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             local chan = self.chanstates[msg.args[1]]
             if chan then
-                for k, v in pairs(chan.members) do
-                    chan.members[k] = nil
-                    self:_remove_from_unknownprefixes(k)
-                end
                 self.chanstates[msg.args[1]] = nil
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.sender.nick, '*PART')
                 self:_trigger_event_handlers('leftchannel', msg.args[1], 'PART')
@@ -946,7 +963,6 @@ ChannelTracker._msghandlers = {--{{{
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 chan.members[msg.sender.nick] = nil
-                self:_remove_from_unknownprefixes(msg.sender.nick)
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.sender.nick, 'PART')
             end
         end
@@ -956,10 +972,6 @@ ChannelTracker._msghandlers = {--{{{
         if self._client:nameeq(self._client:get_nick(), msg.args[2]) then
             local chan = self.chanstates[msg.args[1]]
             if chan then
-                for k, v in pairs(chan.members) do
-                    chan.members[k] = nil
-                    self:_remove_from_unknownprefixes(k)
-                end
                 self.chanstates[msg.args[1]] = nil
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.args[2], '*KICK')
                 self:_trigger_event_handlers('leftchannel', msg.args[1], 'KICK')
@@ -968,14 +980,12 @@ ChannelTracker._msghandlers = {--{{{
             local chan = self.chanstates[msg.args[1]]
             if chan then
                 chan.members[msg.args[2]] = nil
-                self:_remove_from_unknownprefixes(msg.args[2])
                 self:_trigger_event_handlers('memberleft', msg.args[1], msg.args[2], 'KICK')
             end
         end
     end,--}}}
     ['QUIT'] = function (self, msg)--{{{
         if not (msg.sender and msg.sender.nick) then return end
-        self._unknownprefixes[msg.sender.nick] = nil
         if not self._client:nameeq(self._client:get_nick(), msg.sender.nick) then
             for channame, chan in pairs(self.chanstates) do
                 if chan.members[msg.sender.nick] then
@@ -987,11 +997,21 @@ ChannelTracker._msghandlers = {--{{{
     end,--}}}
     ['NICK'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and msg.sender and msg.sender.nick) then return end
-        for channame, chan in pairs(self.chanstates) do
-            if chan.members[msg.sender.nick] then
-                chan.members[msg.args[1]], chan.members[msg.sender.nick] = chan.members[msg.sender.nick], nil
-                chan.members[msg.args[1]].prefix.nick = msg.args[1]
-                self:_trigger_event_handlers('membernick', channame, msg.sender.nick, msg.args[1])
+        local memberprefix = self._memberprefixes[msg.sender.nick]
+        if memberprefix then
+            self._memberprefixes[msg.args[1]], self._memberprefixes[msg.sender.nick] = memberprefix, nil
+            memberprefix.nick = msg.args[1]
+            if memberprefix.str then
+                local strother = memberprefix.str:match('^..-(!.*)')
+                if strother then
+                    memberprefix.str = msg.args[1]..strother
+                end
+            end
+            for channame, chan in pairs(self.chanstates) do
+                if chan.members[msg.sender.nick] then
+                    chan.members[msg.args[1]], chan.members[msg.sender.nick] = chan.members[msg.sender.nick], nil
+                    self:_trigger_event_handlers('membernick', channame, msg.sender.nick, msg.args[1])
+                end
             end
         end
     end,--}}}
@@ -1065,7 +1085,12 @@ ChannelTracker._msghandlers = {--{{{
                     nick = member
                 end
                 if (not chan.members[nick]) and isnick(nick) then
-                    chan.members[nick] = {mode = mode, prefix = {nick=nick}}
+                    local prefix = self._memberprefixes[nick]
+                    if not prefix then
+                        prefix = {nick=nick}
+                        self._memberprefixes[nick] = prefix
+                    end
+                    chan.members[nick] = {mode=mode, prefix=prefix}
                     self:_trigger_event_handlers('memberadded', msg.args[3], nick, 'NAMES')
                     self._unknownprefixes[nick] = true
                 elseif chan.members[nick] then
@@ -1094,6 +1119,7 @@ ChannelTracker._msghandlers = {--{{{
 --}}}
 
 local AutoJoiner = {}--{{{
+_M.AutoJoiner = AutoJoiner
 AutoJoiner.__index = AutoJoiner
 setmetatable(AutoJoiner, {__call = function (t, ...) return AutoJoiner.new(...) end})
 
@@ -1175,7 +1201,7 @@ function AutoJoiner.new(client)--{{{
         end
     end
 
-    client:add_event_handler('statechanged', self._on_statechanged)
+    client:add_callback('statechanged', self._on_statechanged)
 
     return self
 end--}}}
@@ -1185,28 +1211,86 @@ function AutoJoiner:addchannel(chan)
     self._client:sendmessage('JOIN', chan)
 end--}}}
 
--- stuff available to users of this module
-return {--{{{
-    enable_ssl = enable_ssl,
-    sender_prefix_to_table = sender_prefix_to_table,
-    message_line_to_table = message_line_to_table,
-    rfc1459_lower = rfc1459_lower,
-    rfc1459_upper = rfc1459_upper,
-    rfc1459_nameeq = rfc1459_nameeq,
-    strict_rfc1459_lower = strict_rfc1459_lower,
-    strict_rfc1459_upper = strict_rfc1459_upper,
-    strict_rfc1459_nameeq = strict_rfc1459_nameeq,
-    rfc1459_name_key_metatable = rfc1459_name_key_metatable,
-    strict_rfc1459_name_key_metatable = strict_rfc1459_name_key_metatable,
-    ascii_name_key_metatable = ascii_name_key_metatable,
-    ascii_nameeq = ascii_nameeq,
-    isnumreply = isnumreply,
-    iserrreply = iserrreply,
-    ischanname = ischanname,
-    isnick = isnick,
-    applymode = applymode,
-    Client = Client,
-    ChannelTracker = ChannelTracker,
-    AutoJoiner = AutoJoiner,
-}--}}}
+local NickCollisionHandler = {}--{{{
+_M.NickCollisionHandler = NickCollisionHandler
+NickCollisionHandler.__index = NickCollisionHandler
+setmetatable(NickCollisionHandler, {__call = function (t, ...) return NickCollisionHandler.new(...) end})
+
+function NickCollisionHandler.new(client, handler)--{{{
+    local self = setmetatable({}, NickCollisionHandler)
+    local last_attempt, failed, func
+    self._msg_cb = function (client, msg)
+        if client.state == 'registering' and (not failed) and(msg.cmd == '433' or msg.cmd == '') then
+            if not func then
+                func = handler(client, client:get_nick())
+            end
+            last_attempt = func(last_attempt, msg.cmd == '')
+            if last_attempt then
+                client:set_nick(last_attempt)
+            else
+                failed = true
+            end
+        end
+    end
+    self._state_cb = function (client, msg)
+        func, failed, last_attempt = nil, nil, nil
+    end
+    client:add_callback('receivedmessage_post', self._msg_cb)
+    client:add_callback('statechanged', self._state_cb)
+    return self
+end--}}}
+
+NickCollisionHandler.functions = {
+    addchar = function (char)--{{{
+        char = char or '_'
+        return function (client, orignick)
+            local removing = true
+            return function (prevattempt, invalid)
+                if invalid then return nil end
+                if removing then
+                    if #prevattempt == 1 or prevattempt:sub(-1) ~= char then
+                        removing = false
+                    else
+                        return prevattempt:sub(1, -2)
+                    end
+                end
+                if not removing then
+                    return prevattempt..char
+                end
+            end
+        end
+    end,--}}}
+    tryall = function (char)--{{{
+        char = char or '_'
+        return function (client, orignick)
+            local current, suffix, list = 1, '', client.identinfo.nicks
+            return function (prevattempt, invalid)
+                if invalid then return nil end
+                if current > #list then
+                    current, suffix = 1, suffix..char
+                end
+                local ret = list[current]..suffix
+                current = current + 1
+                return ret
+            end
+        end
+    end,--}}}
+    increment_num = function (init)--{{{
+        init = init or 1
+        return function (client, orignick)
+            return function (prevattempt, invalid)
+                if invalid then return nil end
+                local prefix, num, suffix = prevattempt:match('^(.-)(%d+)(%D*)$')
+                if prefix then
+                    return prefix..(tonumber(num)+1)..suffix
+                else
+                    return prevattempt..init
+                end
+            end
+        end
+    end,--}}}
+}
+--}}}
+
+return _M
 
