@@ -911,9 +911,6 @@ function ChannelTracker:remove_callback(event, cb)--{{{
     self._eventhandlers[event][cb] = nil
 end--}}}
 
-ChannelTracker.add_event_handler = ChannelTracker.add_callback
-ChannelTracker.remove_event_handler = ChannelTracker.remove_callback
-
 ChannelTracker._msghandlers = {--{{{
     ['JOIN'] = function (self, msg)--{{{
         if not (#msg.args >= 1 and ischanname(msg.args[1]) and msg.sender and msg.sender.nick) then return end
@@ -1146,12 +1143,12 @@ function AutoJoiner.new(client)--{{{
             for k, v in pairs(self.rejoining_channels) do
                 self._client:sendmessage('JOIN', k) -- FIXME client might not have correct CASEMAPPING settings yet
             end
-            client:add_event_handler('receivedmessage_pre', self._on_message)
+            client:add_callback('receivedmessage_pre', self._on_message)
         elseif state == 'disconnected' or state == 'reconnecting' then
             for k, v in pairs(self.on_channels) do
                 self.rejoining_channels[k] = {}
             end
-            client:remove_event_handler('receivedmessage_pre', self._on_message)
+            client:remove_callback('receivedmessage_pre', self._on_message)
         end
     end
 
