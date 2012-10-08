@@ -945,7 +945,7 @@ ChannelTracker._msghandlers = {--{{{
                 if not self._memberprefixes[msg.sender.nick] then
                     self._memberprefixes[msg.sender.nick] = msg.sender
                 end
-                chan.members[msg.selder.nick] = {prefix=msg.sender, mode='+'}
+                chan.members[msg.sender.nick] = {prefix=msg.sender, mode='+'}
                 self:_trigger_event_handlers('memberadded', msg.args[1], msg.sender.nick, 'JOIN')
             end
         end
