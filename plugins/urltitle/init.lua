@@ -5,7 +5,7 @@ local whitelist = config and config.whitelist or 'whitelist.txt'
 for k, v in pairs(extension_blacklist) do extension_blacklist[k] = ('\.%s$'):format(v) end
 
 do
-    local f = assert(io.open(whitelist))
+    local f = assert(io.open(bot.plugindir..'/'..whitelist))
     local tbl = {}
     for line in f:lines() do
         local match = line:match('%S+')
