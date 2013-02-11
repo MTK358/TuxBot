@@ -73,6 +73,7 @@ return {
 
     plugins = {
         ['echo'] = {'echo.lua'},
+        ['rand'] = {'rand.lua'},
         ['yesno'] = {'yesno.lua', {
             choices = {
                 "Yes.",
