@@ -1,4 +1,3 @@
-
 local socket = require 'socket'
 local ssl = nil
 
@@ -204,7 +203,7 @@ _M.ischanname = ischanname--}}}
 
 -- See if a string is a valid nick.
 local function isnick(str)--{{{
-    return str:match('^%a[%a%d[%]\\`_^{|}-]*$')
+    return str:match('^[%a[%]\\`_^{|}][%a%d[%]\\`_^{|}-]*$')
 end
 _M.isnick = isnick--}}}
 
