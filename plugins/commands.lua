@@ -1,4 +1,3 @@
-
 local function commands_handler(msg, arg)
     local command = arg:match('[^ ]+')
     if command then
@@ -10,7 +9,7 @@ local function commands_handler(msg, arg)
                 end
             end
         end
-        bot.reply(msg, msg.sender.nick..': no such command')
+        bot.reply(msg, msg.sender.nick..': no such command; try \'!commands\', read the /topic or have a look at the source: https://github.com/MTK358/TuxBot')
     else
         local text = msg.sender.nick..': available commands:'
         for pluginname, plugin in pairs(bot.plugininfo) do
