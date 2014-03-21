@@ -5,7 +5,7 @@ A Lua-based IRC library and a rewrite of TuxBot based on it.
 `bot.lua`: Plugin-based bot using the above libraries.
 `plugins/` and `config*.lua`: Configuration and plugins for `bot.lua` that do most of the functionaltiy of the original TuxBot.
 
-The library only depends on LuaSocket (and optionally LuaSec of you want SSL). The `responses.lua` bot plugin also depends on LPeg.
+The library only depends on LuaSocket (and optionally LuaSec of you want SSL). The `responses.lua` bot plugin also depends on LPeg.  Lua 5.1 is required, as some directives have changed in Lua 5.2.
 
 ## `bot.lua` Usage ##
 
