@@ -68,7 +68,7 @@ return {
         },]]
     },
 
-    command_prefixes = {'!', '[Tt][Uu][Xx][Bb][Oo][Tt] *[:,] *'},
+    command_prefixes = {'!', '.', '[Tt][Uu][Xx][Bb][Oo][Tt] *[:,] *'},
     no_command_message = '"%s": no such command; try \'!commands\', read the /topic or have a look at the source: https://github.com/MTK358/TuxBot',
 
     plugins = {
