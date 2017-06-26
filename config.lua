@@ -72,7 +72,7 @@ return {
     no_command_message = '"%s": no such command; try \'!commands\', read the /topic or have a look at the source: https://github.com/MTK358/TuxBot',
 
     plugins = {
-        ['echo'] = {'echo.lua'},
+        -- ['echo'] = {'echo.lua'}, -- this command is DANGEROUS at the moment. https://github.com/MTK358/TuxBot/issues/7
         ['rand'] = {'rand.lua'},
         ['yesno'] = {'yesno.lua', {
             choices = {
